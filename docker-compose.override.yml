@@ -1,0 +1,25 @@
+services:
+  nuggets-api:
+    build: ./Nuggets.API
+    ports:
+      - "5000:8080"
+    depends_on:
+      - postgres
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=nuggets_erp;Username=postgres;Password=postgres
+
+  postgres:
+    image: postgres:16
+    container_name: nuggets_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: nuggets_erp
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

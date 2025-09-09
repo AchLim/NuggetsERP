@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36401.2
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nuggets.API", "Nuggets.API.csproj", "{597ECB5F-A24F-44AD-BDF8-345E6655708D}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{597ECB5F-A24F-44AD-BDF8-345E6655708D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{597ECB5F-A24F-44AD-BDF8-345E6655708D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{597ECB5F-A24F-44AD-BDF8-345E6655708D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{597ECB5F-A24F-44AD-BDF8-345E6655708D}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {D491FF12-93CB-4DD7-B65C-6FB97D2FFF2D}
+	EndGlobalSection
+EndGlobal
