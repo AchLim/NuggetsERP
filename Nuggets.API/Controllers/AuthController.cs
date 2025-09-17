@@ -70,6 +70,21 @@ namespace Nuggets.API.Controllers
             return Ok(new { success = true });
         }
 
+        [HttpPost("verify-age")]
+        public IActionResult VerifyAge([FromForm] bool verified)
+        {
+            if (!verified) return BadRequest(new { success = false });
+            Response.Cookies.Append("age_verified", "true", new CookieOptions
+            {
+                HttpOnly = false,
+                Secure = true,
+                SameSite = SameSiteMode.None,
+                Expires = DateTime.UtcNow.AddDays(30)
+            });
+
+            return Ok(new { success = true });
+        }
+
         [HttpGet("me")]
         [Authorize]
         public IActionResult Me()

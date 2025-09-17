@@ -10,9 +10,12 @@ namespace Nuggets.Infrastructure.Repositories
     {
         private readonly NuggetsDbContext _db = db;
         
-        public new async Task<IReadOnlyList<ProductCategory>> GetAllAsync(CancellationToken ct = default)
+        public override async Task<IReadOnlyList<ProductCategory>> GetAllAsync(CancellationToken ct = default)
         {
-            return await _db.ProductCategories.Include(pc => pc.Parent).AsNoTracking().ToListAsync(ct);
+            return await _db.ProductCategories
+                .Include(pc => pc.Parent)
+                .AsNoTracking()
+                .ToListAsync(ct);
         }
     }
 }

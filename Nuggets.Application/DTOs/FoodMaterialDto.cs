@@ -2,13 +2,13 @@
 
 public record FoodMaterialCreateDto(
     string Name,
-    decimal PricePerUnit,
+    decimal UnitPrice,
     Guid UomId
 );
 
 public record FoodMaterialUpdateDto(
     string Name,
-    decimal PricePerUnit,
+    decimal UnitPrice,
     Guid UomId,
     bool Active
 );

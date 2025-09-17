@@ -15,8 +15,9 @@ public static class IdentitySeeder
     private static readonly string[] Roles = new[]
     {
         "Admin",
+        "Accounting",
         "Sales",
-        "Warehouse"
+        "Warehouse",
     };
 
     public static async Task SeedDatabaseAsync(

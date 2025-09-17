@@ -15,10 +15,10 @@ public class ReportsController : ControllerBase
         _reportingService = reportingService;
     }
 
-    [HttpGet("net-profit")]
-    public async Task<IActionResult> GetNetProfit([FromQuery] DateTime start, [FromQuery] DateTime end)
-    {
-        var profit = await _reportingService.CalculateNetProfitAsync(start, end);
-        return Ok(new { NetProfit = profit });
-    }
+    // [HttpGet("net-profit")]
+    // public async Task<IActionResult> GetNetProfit([FromQuery] DateTime start, [FromQuery] DateTime end)
+    // {
+    //     var profit = await _reportingService.CalculateNetProfitAsync(start, end);
+    //     return Ok(new { NetProfit = profit });
+    // }
 }

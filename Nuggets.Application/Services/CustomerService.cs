@@ -8,28 +8,11 @@ namespace Nuggets.Application.Services;
 
 public sealed class CustomerService(ICustomerRepository repo) : ICustomerService
 {
-    public async Task<Result<PagedResult<Customer>>> GetPagedAsync(int page, int pageSize, IDictionary<string, string?>? filters, string? sort)
+    public async Task<Result<PagedResult<Customer>>> GetPagedAsync(int page, int pageSize)
     {
-        var (items, totalCount) = await repo.GetPagedAsync(page, pageSize, filters, sort);
+        var (items, totalCount) = await repo.GetPagedAsync(page, pageSize);
         var result = new PagedResult<Customer>(items, totalCount, page, pageSize);
         return Result<PagedResult<Customer>>.Ok(result);
-    }
-    
-    public async Task<Result<Customer>> CreateAsync(CustomerCreateDto dto)
-    {
-        if (string.IsNullOrWhiteSpace(dto.Name))
-            return Result<Customer>.Err("Full name is required!");
-
-        var customer = new Customer
-        {
-            Name = dto.Name,
-            Email = dto.Email,
-            Address = dto.Address,
-            Phone = dto.Phone,
-        };
-
-        await repo.AddAsync(customer);
-        return Result<Customer>.Ok(customer);
     }
 
     public async Task<Result<IReadOnlyList<Customer>>> GetAllAsync()
@@ -43,32 +26,81 @@ public sealed class CustomerService(ICustomerRepository repo) : ICustomerService
         var customer = await repo.GetByIdAsync(id);
         return customer is not null
             ? Result<Customer>.Ok(customer)
-            : Result<Customer>.Err("Customer not found!");
+            : Result<Customer>.Err("Customer not found!", "NOT_FOUND");
+    }
+    
+    public async Task<Result<Customer>> CreateAsync(CustomerCreateDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Name))
+            return Result<Customer>.Err("Full name is required!", "VALIDATION_ERROR");
+
+        await using var tx = await repo.BeginTransactionAsync();
+        try
+        {
+            var customer = new Customer
+            {
+                Name = dto.Name,
+                Email = dto.Email,
+                Address = dto.Address,
+                Phone = dto.Phone,
+            };
+
+            await repo.AddAsync(customer);
+
+            await tx.CommitAsync();
+            return Result<Customer>.Ok(customer);
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync();
+            return Result<Customer>.Err($"Failed to create customer: {ex.Message}", "DB_ERROR");
+        }
     }
 
     public async Task<Result<Customer>> UpdateAsync(Guid id, CustomerUpdateDto dto)
     {
-        var existing = await repo.GetByIdAsync(id);
+        await using var tx = await repo.BeginTransactionAsync();
+        try
+        {
+            var existing = await repo.GetByIdAsync(id);
+            if (existing is null)
+                return Result<Customer>.Err("Customer not found", "NOT_FOUND");
 
-        if (existing is null)
-            return Result<Customer>.Err("Customer not found!");
+            existing.Name = dto.Name;
+            existing.Email = dto.Email;
+            existing.Address = dto.Address;
+            existing.Phone = dto.Phone;
 
-        existing.Name = dto.Name;
-        existing.Email = dto.Email;
-        existing.Address = dto.Address;
-        existing.Phone = dto.Phone;
+            await repo.UpdateAsync(existing);
 
-        await repo.UpdateAsync(existing);
-        return Result<Customer>.Ok(existing);
+            await tx.CommitAsync();
+            return Result<Customer>.Ok(existing);
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync();
+            return Result<Customer>.Err($"Failed to update customer: {ex.Message}", "DB_ERROR");
+        }
     }
 
     public async Task<Result<bool>> DeleteAsync(Guid id)
     {
-        var existing = await repo.GetByIdAsync(id);
-        if (existing is null)
-            return Result<bool>.Err("Customer not found!");
+        await using var tx = await repo.BeginTransactionAsync();
+        try
+        {
+            var existing = await repo.GetByIdAsync(id);
+            if (existing is null)
+                return Result<bool>.Err("Customer not found", "NOT_FOUND");
 
-        await repo.DeleteAsync(existing);
-        return Result<bool>.Ok(true);
+            await repo.DeleteAsync(existing);
+
+            await tx.CommitAsync();
+            return Result<bool>.Ok(true);
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync();
+            return Result<bool>.Err($"Failed to delete customer: {ex.Message}", "DB_ERROR");
+        }
     }
 }

@@ -1,7 +1,9 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Nuggets.Domain.Entities;
 
+[Table("product_category")]
 public sealed class ProductCategory : BaseEntity
 {
     [Required]

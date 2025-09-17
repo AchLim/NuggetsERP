@@ -10,23 +10,43 @@ public class NuggetsDbContext : IdentityDbContext<AppUser, AppRole, Guid>
 {
     public NuggetsDbContext(DbContextOptions<NuggetsDbContext> options) : base(options) { }
 
-    // Master Tables
+    public DbSet<Customer> Customers => Set<Customer>();
+    public DbSet<Vendor> Vendors => Set<Vendor>();
+    public DbSet<Product> Products => Set<Product>();
+    public DbSet<ProductCategory> ProductCategories => Set<ProductCategory>();
     public DbSet<UnitOfMeasure> Uoms => Set<UnitOfMeasure>();
     public DbSet<UnitOfMeasureConversion> UomConversions => Set<UnitOfMeasureConversion>();
 
-    // Materials & Recipes
+    public DbSet<GoodsReceiptNote> GoodsReceiptNotes => Set<GoodsReceiptNote>();
+    public DbSet<DeliveryNote> DeliveryNotes => Set<DeliveryNote>();
+    
+    public DbSet<SalesOrder> SalesOrders => Set<SalesOrder>();
+    public DbSet<SalesOrderLine> SalesOrderLines => Set<SalesOrderLine>();
+    public DbSet<SalesReceipt> SalesReceipts => Set<SalesReceipt>();
+    public DbSet<SalesReceiptLine> SalesReceiptLines => Set<SalesReceiptLine>();
+    public DbSet<CustomerInvoice> CustomerInvoices => Set<CustomerInvoice>();
+    public DbSet<CustomerInvoiceLine> CustomerInvoiceLines => Set<CustomerInvoiceLine>();
+    public DbSet<CustomerPayment> CustomerPayments => Set<CustomerPayment>();
+
+    public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
+    public DbSet<PurchaseOrderLine> PurchaseOrderLines => Set<PurchaseOrderLine>();
+    public DbSet<PurchaseReceipt> PurchaseReceipts => Set<PurchaseReceipt>();
+    public DbSet<PurchaseReceiptLine> PurchaseReceiptLines => Set<PurchaseReceiptLine>();
+    public DbSet<VendorPayment> VendorPayments => Set<VendorPayment>();
+    public DbSet<VendorBill> VendorBills => Set<VendorBill>();
+    public DbSet<VendorBillLine> VendorBillLines => Set<VendorBillLine>();
+
+    public DbSet<StockMovement> StockMovements => Set<StockMovement>();
+
+    public DbSet<ChartOfAccount> ChartOfAccounts => Set<ChartOfAccount>();
+    public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
+    public DbSet<JournalItem> JournalItems => Set<JournalItem>();
+
+    // Food
     public DbSet<FoodMaterial> FoodMaterials => Set<FoodMaterial>();
     public DbSet<FoodRecipe> FoodRecipes => Set<FoodRecipe>();
 
-    // Products & Sales
-    public DbSet<Product> Products => Set<Product>();
-    public DbSet<ProductCategory> ProductCategories => Set<ProductCategory>();
-    public DbSet<ProductUom> ProductUoms => Set<ProductUom>();
-    public DbSet<Customer> Customers => Set<Customer>();
-    public DbSet<Supplier> Suppliers => Set<Supplier>();
-    public DbSet<Sale> Sales => Set<Sale>();
-    public DbSet<Expense> Expenses => Set<Expense>();
-
+    // Multi-company
     public DbSet<Company> Companies => Set<Company>();
     public DbSet<UserCompany> UserCompanies => Set<UserCompany>();
 
@@ -56,43 +76,51 @@ public class NuggetsDbContext : IdentityDbContext<AppUser, AppRole, Guid>
             builder.Entity(entityType.ClrType).HasQueryFilter(finalExpr);
         }
         
-        // --- Products ---
-        builder.Entity<Product>().ToTable("product_product");
-        builder.Entity<ProductCategory>().ToTable("product_category");
-        builder.Entity<ProductUom>().ToTable("product_uom");
-        builder.Entity<Customer>().ToTable("customer_customer");
-
+        builder.Entity<Customer>(b =>
+        {
+            b.HasKey(x => x.Id);
+        });
+        
+        builder.Entity<Vendor>(b =>
+        {
+            b.HasKey(x => x.Id);
+        });
+        
         builder.Entity<Product>(b =>
         {
             b.HasKey(x => x.Id);
-            b.Property(x => x.Price).HasColumnType("numeric(18,4)");
+            b.Property(x => x.DefaultPrice).HasColumnType("numeric(18,4)");
             b.Property(x => x.Name).IsRequired().HasMaxLength(512);
 
-            b.HasOne(x => x.Supplier)
+            b.HasOne(x => x.Vendor)
              .WithMany()
-             .HasForeignKey(x => x.SupplierId)
+             .HasForeignKey(x => x.VendorId)
              .OnDelete(DeleteBehavior.Restrict);
+            
+            b.HasOne(x => x.Uom)
+                .WithMany()
+                .HasForeignKey(x => x.UomId);
+            b.HasOne(x => x.ProductCategory)
+                .WithMany()
+                .HasForeignKey(x => x.ProductCategoryId);
+            
+            b.HasMany(p => p.StockMovements)
+                .WithOne(sm => sm.Product)
+                .HasForeignKey(sm => sm.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<ProductCategory>(b =>
         {
             b.HasKey(x => x.Id);
-            b.Property(x => x.Name).IsRequired().HasMaxLength(256);
-
             b.HasOne(x => x.Parent)
-             .WithMany()
-             .HasForeignKey(x => x.ParentId)
-             .OnDelete(DeleteBehavior.Restrict);
+                .WithMany()
+                .HasForeignKey(x => x.ParentId);
         });
-
-        // --- Uoms (Units of Measure) ---
-        builder.Entity<UnitOfMeasure>().ToTable("uom_uom");
 
         builder.Entity<UnitOfMeasure>(b =>
         {
             b.HasKey(x => x.Id);
-            b.Property(x => x.Name).IsRequired().HasMaxLength(128);
-            b.Property(x => x.Abbreviation).IsRequired().HasMaxLength(16);
         });
 
         builder.Entity<UnitOfMeasureConversion>().ToTable("uom_conversion");
@@ -100,24 +128,183 @@ public class NuggetsDbContext : IdentityDbContext<AppUser, AppRole, Guid>
         builder.Entity<UnitOfMeasureConversion>(b =>
         {
             b.HasKey(x => x.Id);
-            b.Property(x => x.ConversionRate).HasColumnType("numeric(18,6)");
-
             b.HasOne(x => x.FromUom)
-             .WithMany(u => u.FromConversions)
-             .HasForeignKey(x => x.FromUomId)
-             .OnDelete(DeleteBehavior.Restrict);
-
+                .WithMany(x => x.FromConversions)
+                .HasForeignKey(x => x.FromUomId)
+                .OnDelete(DeleteBehavior.Restrict);
             b.HasOne(x => x.ToUom)
-             .WithMany(u => u.ToConversions)
-             .HasForeignKey(x => x.ToUomId)
-             .OnDelete(DeleteBehavior.Restrict);
+                .WithMany(x => x.ToConversions)
+                .HasForeignKey(x => x.ToUomId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             b.HasIndex(x => new { x.FromUomId, x.ToUomId }).IsUnique();
         });
+        
+        builder.Entity<SalesOrder>(b =>
+        {
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
+            b.HasOne(x => x.Customer)
+                .WithMany()
+                .HasForeignKey(x => x.CustomerId);
+        });
+
+        builder.Entity<SalesOrderLine>(b =>
+        {
+            b.HasKey(x => x.Id);
+            b.HasOne(l => l.SalesOrder)
+                .WithMany(o => o.Lines)
+                .HasForeignKey(l => l.SalesOrderId);
+            b.HasOne(l => l.Product)
+                .WithMany()
+                .HasForeignKey(l => l.ProductId);
+            b.HasOne(l => l.Uom)
+                .WithMany()
+                .HasForeignKey(l => l.UomId);
+        });
+        
+        builder.Entity<SalesReceipt>(b =>
+        {
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Status)
+                .HasConversion<string>()
+                .HasMaxLength(32);
+            b.HasOne(x => x.Customer)
+                .WithMany()
+                .HasForeignKey(x => x.CustomerId);
+        });
+
+        builder.Entity<SalesReceiptLine>(b =>
+        {
+            b.HasKey(x => x.Id);
+            b.HasOne(l => l.SalesReceipt)
+                .WithMany(o => o.Lines)
+                .HasForeignKey(l => l.SalesReceiptId);
+            b.HasOne(l => l.Product)
+                .WithMany()
+                .HasForeignKey(l => l.ProductId);
+            b.HasOne(l => l.Uom)
+                .WithMany()
+                .HasForeignKey(l => l.UomId);
+        });
+        
+        builder.Entity<CustomerInvoice>(b =>
+        {
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Status)
+                .HasConversion<string>()
+                .HasMaxLength(32);
+            b.HasOne(x => x.Customer)
+                .WithMany()
+                .HasForeignKey(x => x.CustomerId);
+        });
+
+        builder.Entity<CustomerInvoiceLine>(b =>
+        {
+            b.HasKey(x => x.Id);
+            b.HasOne(l => l.CustomerInvoice)
+                .WithMany(o => o.Lines)
+                .HasForeignKey(l => l.CustomerInvoiceId);
+            b.HasOne(l => l.Product)
+                .WithMany()
+                .HasForeignKey(l => l.ProductId);
+            b.HasOne(l => l.Uom)
+                .WithMany()
+                .HasForeignKey(l => l.UomId);
+        });
+        
+        builder.Entity<CustomerPayment>(b =>
+        {
+            b.HasKey(x => x.Id);
+            b.HasOne(x => x.CustomerInvoice)
+                .WithMany(ci => ci.CustomerPayments)
+                .HasForeignKey(x => x.CustomerInvoiceId);
+        });
+        
+        builder.Entity<PurchaseOrder>(b =>
+        {
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Status)
+                .HasConversion<string>()
+                .HasMaxLength(32);
+            b.HasOne(x => x.Vendor)
+                .WithMany()
+                .HasForeignKey(x => x.VendorId);
+        });
+
+        builder.Entity<PurchaseOrderLine>(b =>
+        {
+            b.HasKey(x => x.Id);
+            b.HasOne(l => l.PurchaseOrder)
+                .WithMany(o => o.Lines)
+                .HasForeignKey(l => l.PurchaseOrderId);
+            b.HasOne(l => l.Product)
+                .WithMany()
+                .HasForeignKey(l => l.ProductId);
+            b.HasOne(l => l.Uom)
+                .WithMany()
+                .HasForeignKey(l => l.UomId);
+        });
+        
+        builder.Entity<PurchaseReceipt>(b =>
+        {
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Status)
+                .HasConversion<string>()
+                .HasMaxLength(32);
+            b.HasOne(x => x.Vendor)
+                .WithMany()
+                .HasForeignKey(x => x.VendorId);
+        });
+
+        builder.Entity<PurchaseReceiptLine>(b =>
+        {
+            b.HasKey(x => x.Id);
+            b.HasOne(l => l.PurchaseReceipt)
+                .WithMany(o => o.Lines)
+                .HasForeignKey(l => l.PurchaseReceiptId);
+            b.HasOne(l => l.Product)
+                .WithMany()
+                .HasForeignKey(l => l.ProductId);
+            b.HasOne(l => l.Uom)
+                .WithMany()
+                .HasForeignKey(l => l.UomId);
+        });
+        
+        builder.Entity<VendorPayment>(b =>
+        {
+            b.HasKey(x => x.Id);
+            b.HasOne(x => x.VendorBill)
+                .WithMany(ci => ci.VendorPayments)
+                .HasForeignKey(x => x.VendorBillId);
+        });
+        
+        builder.Entity<VendorBill>(b =>
+        {
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Status)
+                .HasConversion<string>()
+                .HasMaxLength(32);
+            b.HasOne(x => x.Vendor)
+                .WithMany()
+                .HasForeignKey(x => x.VendorId);
+        });
+
+        builder.Entity<VendorBillLine>(b =>
+        {
+            b.HasKey(x => x.Id);
+            b.HasOne(l => l.VendorBill)
+                .WithMany(o => o.Lines)
+                .HasForeignKey(l => l.VendorBillId);
+            b.HasOne(l => l.Product)
+                .WithMany()
+                .HasForeignKey(l => l.ProductId);
+            b.HasOne(l => l.Uom)
+                .WithMany()
+                .HasForeignKey(l => l.UomId);
+        });
 
         // --- Food Recipe ---
-        builder.Entity<FoodRecipe>().ToTable("mrp_bom");
-
         builder.Entity<FoodRecipe>(b =>
         {
             b.HasKey(x => x.Id);
@@ -140,12 +327,41 @@ public class NuggetsDbContext : IdentityDbContext<AppUser, AppRole, Guid>
             b.Property(x => x.Quantity).HasColumnType("numeric(18,3)");
         });
 
-        builder.Entity<Expense>().ToTable("account_expense");
+        // Chart of Accounts
+        builder.Entity<ChartOfAccount>(b =>
+        {
+            b.HasKey(x => x.Id);
+        });
+        builder.Entity<JournalEntry>(b =>
+        {
+            b.HasKey(x => x.Id);
+            b.HasMany(j => j.Items)
+                .WithOne(i => i.JournalEntry)
+                .HasForeignKey(i => i.JournalEntryId);
+        });
+        builder.Entity<JournalItem>(b =>
+        {
+            b.HasOne(i => i.Account)
+                .WithMany()
+                .HasForeignKey(i => i.AccountId);
+        });
 
-        // Composite Key for Many-to-Many
+        // --- Inventory Movements ---
+        builder.Entity<StockMovement>(b =>
+        {
+            b.HasKey(x => x.Id);
+            b.HasKey(x => x.Id);
+            b.Property(x => x.MovementType)
+                .HasConversion<string>()
+                .HasMaxLength(32);
+            b.HasOne(x => x.Product)
+                .WithMany(p => p.StockMovements)
+                .HasForeignKey(x => x.ProductId);
+        });
+
+        // --- Companies ---
         builder.Entity<Company>().ToTable("res_company");
-        builder.Entity<UserCompany>()
-            .HasKey(uc => new { uc.UserId, uc.CompanyId });
+        builder.Entity<UserCompany>().HasKey(uc => new { uc.UserId, uc.CompanyId });
 
         builder.Entity<UserCompany>()
             .HasOne<AppUser>()

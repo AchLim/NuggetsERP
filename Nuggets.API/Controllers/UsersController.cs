@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Nuggets.API.Controllers;
 
 [ApiController]
-[Route("v1/[controller]")]
+[Route("v1/user")]
 [Authorize(Policy = "USERS:READ")]
 public class UsersController(
     UserManager<AppUser> userManager,

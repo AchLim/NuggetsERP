@@ -3,6 +3,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Nuggets.Domain.Entities;
 
+[Table("food_recipe")]
 public class FoodRecipe : BaseEntity
 {
     [Required]
@@ -13,8 +14,7 @@ public class FoodRecipe : BaseEntity
     public Guid FoodMaterialId { get; set; }
     public FoodMaterial FoodMaterial { get; set; } = null!;
     
-    [Column(TypeName = "decimal(18,3)")]   // allows fractional quantities
-    [Range(0.00, 999999)]
+    [Column(TypeName = "decimal(18,3)"), Range(0.00, 999999)]
     public decimal Quantity { get; set; }
     
     [Required]

@@ -5,7 +5,7 @@ namespace Nuggets.Application.Common.Services;
 
 public interface ICustomerService
 {
-    Task<Result<PagedResult<Customer>>> GetPagedAsync(int page, int pageSize, IDictionary<string, string?>? filters, string? sort);
+    Task<Result<PagedResult<Customer>>> GetPagedAsync(int page, int pageSize);
     Task<Result<IReadOnlyList<Customer>>> GetAllAsync();
     Task<Result<Customer>> GetByIdAsync(Guid id);
     Task<Result<Customer>> CreateAsync(CustomerCreateDto dto);

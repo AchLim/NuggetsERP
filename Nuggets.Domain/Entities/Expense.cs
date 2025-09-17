@@ -3,16 +3,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Nuggets.Domain.Entities;
 
-public enum ExpenseCategory
-{
-    FoodMaterial = 1,
-    Labor = 2,
-    Electricity = 3,
-    Wifi = 4,
-    Overhead = 5,
-    Other = 999
-}
-
+[Table("expense")]
 public class Expense : BaseEntity
 {
     [Required]
@@ -27,4 +18,14 @@ public class Expense : BaseEntity
     public decimal Amount { get; set; }
 
     [Required] public DateTime ExpenseDate { get; set; } = DateTime.UtcNow;
+}
+
+public enum ExpenseCategory
+{
+    FoodMaterial = 1,
+    Labor = 2,
+    Electricity = 3,
+    Wifi = 4,
+    Overhead = 5,
+    Other = 999
 }

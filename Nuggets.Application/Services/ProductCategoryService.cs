@@ -5,15 +5,16 @@ using Nuggets.Application.DTOs;
 using Nuggets.Domain.Entities;
 
 namespace Nuggets.Application.Services;
+
 public class ProductCategoryService(IProductCategoryRepository repo) : IProductCategoryService
 {
-    public async Task<Result<PagedResult<ProductCategory>>> GetPagedAsync(int page, int pageSize, IDictionary<string, string?>? filters, string? sort)
+    public async Task<Result<PagedResult<ProductCategory>>> GetPagedAsync(
+        int page, int pageSize)
     {
-        var (items, totalCount) = await repo.GetPagedAsync(page, pageSize, filters, sort);
-        var result = new PagedResult<ProductCategory>(items, totalCount, page, pageSize);
-        return Result<PagedResult<ProductCategory>>.Ok(result);
+        var (items, totalCount) = await repo.GetPagedAsync(page, pageSize);
+        return Result<PagedResult<ProductCategory>>.Ok(new PagedResult<ProductCategory>(items, totalCount, page, pageSize));
     }
-    
+
     public async Task<Result<IReadOnlyList<ProductCategory>>> GetAllAsync()
     {
         var list = await repo.GetAllAsync();
@@ -25,52 +26,79 @@ public class ProductCategoryService(IProductCategoryRepository repo) : IProductC
         var category = await repo.GetByIdAsync(id);
         return category is not null
             ? Result<ProductCategory>.Ok(category)
-            : Result<ProductCategory>.Err("Category not found!");
+            : Result<ProductCategory>.Err("Category not found", "NOT_FOUND");
     }
 
     public async Task<Result<ProductCategory>> CreateAsync(ProductCategoryCreateDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Name))
-            return Result<ProductCategory>.Err("Category name is required!");
+            return Result<ProductCategory>.Err("Category name is required!", "VALIDATION_ERROR");
 
-        var entity = new ProductCategory
+        await using var tx = await repo.BeginTransactionAsync();
+        try
         {
-            Name = dto.Name,
-            Sequence = dto.Sequence,
-            ParentId = dto.ParentId,
-        };
+            var entity = new ProductCategory
+            {
+                Name = dto.Name,
+                Sequence = dto.Sequence,
+                ParentId = dto.ParentId,
+                Active = dto.Active ?? true
+            };
 
-        if (dto.Active.HasValue)
-        {
-            entity.Active = dto.Active.Value;
+            await repo.AddAsync(entity);
+            await tx.CommitAsync();
+
+            return Result<ProductCategory>.Ok(entity);
         }
-
-        await repo.AddAsync(entity);
-        return Result<ProductCategory>.Ok(entity);
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync();
+            return Result<ProductCategory>.Err($"Failed to create category: {ex.Message}", "DB_ERROR");
+        }
     }
 
     public async Task<Result<ProductCategory>> UpdateAsync(Guid id, ProductCategoryUpdateDto dto)
     {
-        var existing = await repo.GetByIdAsync(id);
-        if (existing is null)
-            return Result<ProductCategory>.Err("Category not found!");
+        await using var tx = await repo.BeginTransactionAsync();
+        try
+        {
+            var existing = await repo.GetByIdAsync(id);
+            if (existing is null)
+                return Result<ProductCategory>.Err("Category not found", "NOT_FOUND");
 
-        existing.Name = dto.Name;
-        existing.Active = dto.Active;
-        existing.Sequence = dto.Sequence;
-        existing.ParentId = dto.ParentId;
-        
-        await repo.UpdateAsync(existing);
-        return Result<ProductCategory>.Ok(existing);
+            existing.Name = dto.Name;
+            existing.Active = dto.Active;
+            existing.Sequence = dto.Sequence;
+            existing.ParentId = dto.ParentId;
+
+            await repo.UpdateAsync(existing);
+            await tx.CommitAsync();
+            return Result<ProductCategory>.Ok(existing);
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync();
+            return Result<ProductCategory>.Err($"Failed to update category: {ex.Message}", "DB_ERROR");
+        }
     }
 
     public async Task<Result<bool>> DeleteAsync(Guid id)
     {
-        var existing = await repo.GetByIdAsync(id);
-        if (existing is null)
-            return Result<bool>.Err("Category not found!");
+        await using var tx = await repo.BeginTransactionAsync();
+        try
+        {
+            var existing = await repo.GetByIdAsync(id);
+            if (existing is null)
+                return Result<bool>.Err("Category not found", "NOT_FOUND");
 
-        await repo.DeleteAsync(existing);
-        return Result<bool>.Ok(true);
+            await repo.DeleteAsync(existing);
+            await tx.CommitAsync();
+            return Result<bool>.Ok(true);
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync();
+            return Result<bool>.Err($"Failed to delete category: {ex.Message}", "DB_ERROR");
+        }
     }
 }

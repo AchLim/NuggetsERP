@@ -5,7 +5,7 @@ namespace Nuggets.Application.Common.Services;
 
 public interface IFoodMaterialService
 {
-    Task<Result<PagedResult<FoodMaterial>>> GetPagedAsync(int page, int pageSize, IDictionary<string, string?>? filters, string? sort);
+    Task<Result<PagedResult<FoodMaterial>>> GetPagedAsync(int page, int pageSize);
     Task<Result<IReadOnlyList<FoodMaterial>>> GetAllAsync();
     Task<Result<FoodMaterial>> GetByIdAsync(Guid id);
     Task<Result<FoodMaterial>> CreateAsync(FoodMaterialCreateDto dto);

@@ -3,12 +3,12 @@ using Nuggets.Domain.Entities;
 
 namespace Nuggets.Application.Common.Services;
 
-public interface ISupplierService
+public interface IVendorService
 {
-    Task<Result<PagedResult<Supplier>>> GetPagedAsync(int page, int pageSize, IDictionary<string, string?>? filters, string? sort);
-    Task<Result<IReadOnlyList<Supplier>>> GetAllAsync();
-    Task<Result<Supplier>> GetByIdAsync(Guid id);
-    Task<Result<Supplier>> CreateAsync(SupplierCreateDto dto);
-    Task<Result<Supplier>> UpdateAsync(Guid id, SupplierUpdateDto dto);
+    Task<Result<PagedResult<Vendor>>> GetPagedAsync(int page, int pageSize);
+    Task<Result<IReadOnlyList<Vendor>>> GetAllAsync();
+    Task<Result<Vendor>> GetByIdAsync(Guid id);
+    Task<Result<Vendor>> CreateAsync(VendorCreateDto dto);
+    Task<Result<Vendor>> UpdateAsync(Guid id, VendorUpdateDto dto);
     Task<Result<bool>> DeleteAsync(Guid id);
 }

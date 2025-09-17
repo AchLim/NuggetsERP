@@ -1,4 +1,5 @@
 ﻿using System.Linq.Expressions;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Nuggets.Application.Common.Interfaces;
 
@@ -11,12 +12,17 @@ public interface IGenericRepository<T> where T : class
     Task<(IReadOnlyList<T> Items, int TotalCount)> GetPagedAsync(
         int page, 
         int pageSize,
-        IDictionary<string, string?>? filters = null,
-        string? sort = null,
+        IQueryable<T>? startingQuery = null,
         CancellationToken ct = default
     );
 
     Task<T> AddAsync(T entity, CancellationToken ct = default);
     Task<T> UpdateAsync(T entity, CancellationToken ct = default);
     Task DeleteAsync(T entity, CancellationToken ct = default);
+
+    Task<IDbContextTransaction> BeginTransactionAsync();
+
+    Task<int> SaveChangesAsync(CancellationToken ct = default);
+
+    Task<long> GetNextSequenceValueAsync(string sequenceName, CancellationToken ct = default);
 }

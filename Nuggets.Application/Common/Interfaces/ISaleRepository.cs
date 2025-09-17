@@ -2,7 +2,8 @@
 
 namespace Nuggets.Application.Common.Interfaces;
 
-public interface ISaleRepository : IGenericRepository<Sale>
-{
-    Task<decimal> GetTotalRevenueAsync(DateTime from, DateTime to);
-}
+public interface ISalesOrderRepository : IGenericRepository<SalesOrder> { }
+public interface ICustomerInvoiceRepository : IGenericRepository<CustomerInvoice> { }
+public interface ISalesReceiptRepository : IGenericRepository<SalesReceipt> { }
+
+public interface ICustomerPaymentRepository : IGenericRepository<CustomerPayment> { }

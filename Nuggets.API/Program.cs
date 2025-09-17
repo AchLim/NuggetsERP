@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -15,8 +16,12 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 
-builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -114,6 +119,11 @@ using (var scope = app.Services.CreateScope())
     var dbContext = services.GetRequiredService<NuggetsDbContext>();
 
     await IdentitySeeder.SeedDatabaseAsync(userManager, roleManager, dbContext);
+    await UomSeeder.SeedUomsAsync(dbContext);
+    await AccountSeeder.SeedChartOfAccountsAsync(dbContext);
+
+    // --- SEQUENCES (PostgreSQL) ---
+    await SequenceSeeder.EnsureSequencesAsync(dbContext);
 }
 // -------------------------------------------------
 

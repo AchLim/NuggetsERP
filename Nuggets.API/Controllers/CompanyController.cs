@@ -19,15 +19,11 @@ public class CompanyController(ILogger<CompanyController> logger, ICompanyServic
     {
         var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
         
-        logger.LogInformation("user: {}", User);
-        logger.LogInformation("userId: {}", userId);
         var result = await companyService.GetUserCompaniesAsync(userId);
-        logger.LogInformation("result: {}", result.IsSuccess);
-        logger.LogInformation("result: {}", result.Value);
 
         return result.IsSuccess
             ? Ok(result.Value!.Select(c => new { c.Id, c.Name }))
-            : BadRequest(new { error = result.Error });
+            : BadRequest(new { error = result.Error, code = result.ErrorCode });
     }
 
     /// <summary>
@@ -41,7 +37,7 @@ public class CompanyController(ILogger<CompanyController> logger, ICompanyServic
 
         return result.IsSuccess
             ? Ok(new { activeCompanies = result.Value })
-            : BadRequest(new { error = result.Error });
+            : BadRequest(new { error = result.Error, code = result.ErrorCode });
     }
 
     /// <summary>
@@ -54,6 +50,6 @@ public class CompanyController(ILogger<CompanyController> logger, ICompanyServic
 
         return result.IsSuccess
             ? Ok(result.Value)
-            : BadRequest(new { error = result.Error });
+            : BadRequest(new { error = result.Error, code = result.ErrorCode });
     }
 }

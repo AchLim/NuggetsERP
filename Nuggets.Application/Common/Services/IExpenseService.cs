@@ -5,7 +5,7 @@ namespace Nuggets.Application.Common.Services;
 
 public interface IExpenseService
 {
-    Task<Result<PagedResult<Expense>>> GetPagedAsync(int page, int pageSize, IDictionary<string, string?>? filters, string? sort);
+    Task<Result<PagedResult<Expense>>> GetPagedAsync(int page, int pageSize);
     Task<Result<IReadOnlyList<Expense>>> GetAllAsync();
     Task<Result<Expense>> GetByIdAsync(Guid id);
     Task<Result<Expense>> CreateAsync(ExpenseCreateDto dto);

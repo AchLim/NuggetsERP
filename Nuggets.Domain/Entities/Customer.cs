@@ -1,8 +1,10 @@
 ﻿using Nuggets.Domain.Entities;
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Nuggets.Domain.Entities;
 
+[Table("customer")]
 public sealed class Customer : BaseEntity
 {
     [Required]

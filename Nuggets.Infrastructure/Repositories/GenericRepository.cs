@@ -1,9 +1,9 @@
-﻿using System.Linq.Dynamic.Core;
-using Microsoft.EntityFrameworkCore;
-using Nuggets.Infrastructure.Persistence;
-using System.Linq.Expressions;
+﻿using System.Linq.Expressions;
 using System.Reflection;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Nuggets.Application.Common.Interfaces;
+using Nuggets.Infrastructure.Persistence;
 
 namespace Nuggets.Infrastructure.Repositories;
 
@@ -12,92 +12,38 @@ public class GenericRepository<T>(NuggetsDbContext db) : IGenericRepository<T>
 {
     private readonly DbSet<T> _dbSet = db.Set<T>();
 
-    public async Task<T?> GetByIdAsync(Guid id, CancellationToken ct = default) 
+    public virtual async Task<T?> GetByIdAsync(Guid id, CancellationToken ct = default)
         => await _dbSet.FindAsync([id], ct);
 
-    public async Task<IReadOnlyList<T>> GetAllAsync(CancellationToken ct = default) 
+    public virtual async Task<IReadOnlyList<T>> GetAllAsync(CancellationToken ct = default)
         => await _dbSet.AsNoTracking().ToListAsync(ct);
 
-    public async Task<IReadOnlyList<T>> FindAsync(Expression<Func<T, bool>> predicate, CancellationToken ct = default) 
+    public virtual async Task<IReadOnlyList<T>> FindAsync(Expression<Func<T, bool>> predicate,
+        CancellationToken ct = default)
         => await _dbSet.AsNoTracking().Where(predicate).ToListAsync(ct);
 
-    public async Task<(IReadOnlyList<T> Items, int TotalCount)> GetPagedAsync(
+    public virtual async Task<(IReadOnlyList<T> Items, int TotalCount)> GetPagedAsync(
         int page,
         int pageSize,
-        IDictionary<string, string?>? filters = null,
-        string? sort = null,
+        IQueryable<T>? startingQuery = null,
         CancellationToken ct = default)
     {
-        var query = _dbSet.AsNoTracking().AsQueryable();
+        var query = startingQuery ?? _dbSet.AsNoTracking().AsQueryable();
 
-        // 🔍 Apply column filters
-        if (filters != null)
+        // Default to Id order if exists
+        var keyProp = typeof(T).GetProperty("Id",
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+        if (keyProp != null)
         {
-            foreach (var filter in filters)
-            {
-                if (string.IsNullOrWhiteSpace(filter.Value)) continue;
-
-                var propInfo = typeof(T).GetProperty(
-                    filter.Key,
-                    BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance
-                );
-
-                if (propInfo != null && propInfo.PropertyType == typeof(string))
-                {
-                    query = query.Where(e =>
-                        EF.Functions.ILike(
-                            EF.Property<string>(e, propInfo.Name)!,
-                            $"%{filter.Value}%"
-                        ));
-                }
-            }
-        }
-
-        // Sorting e.g. "Name asc,Email desc"
-        if (!string.IsNullOrWhiteSpace(sort))
-        {
-            // Convert "name:asc,email:desc" => "Name asc, Email desc"
-            var normalizedSort = string.Join(",",
-                sort.Split(',')
-                    .Select(s =>
-                    {
-                        var parts = s.Split(':');
-                        var property = parts[0].Trim();
-                        var direction = parts.Length > 1 ? parts[1].Trim() : "asc";
-
-                        // Uppercase property to match C# property names
-                        var propInfo = typeof(T).GetProperty(
-                            property,
-                            BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance
-                        );
-                        var actualPropName = propInfo?.Name ?? property;
-
-                        return $"{actualPropName} {direction}";
-                    })
-            );
-
-            query = query.OrderBy(normalizedSort);
-        }
-
-        if (string.IsNullOrWhiteSpace(sort))
-        {
-            var keyProp = typeof(T).GetProperty("Id", BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
-            if (keyProp != null)
-            {
-                query = query.OrderBy(keyProp.Name);
-            }
+            query = query.OrderBy(e => EF.Property<object>(e, keyProp.Name));
         }
 
         var totalCount = await query.CountAsync(ct);
-
-        var items = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync(ct);
+        var items = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
 
         return (items, totalCount);
     }
-    
+
     public async Task<T> AddAsync(T entity, CancellationToken ct = default)
     {
         await _dbSet.AddAsync(entity, ct);
@@ -116,5 +62,28 @@ public class GenericRepository<T>(NuggetsDbContext db) : IGenericRepository<T>
     {
         _dbSet.Remove(entity);
         await db.SaveChangesAsync(ct);
+    }
+
+    public virtual async Task<IDbContextTransaction> BeginTransactionAsync()
+    {
+        return await db.Database.BeginTransactionAsync();
+    }
+
+    public virtual async Task<int> SaveChangesAsync(CancellationToken ct = default)
+    {
+        return await db.SaveChangesAsync(ct);
+    }
+    
+    
+    public virtual async Task<long> GetNextSequenceValueAsync(string sequenceName, CancellationToken ct = default)
+    {
+        var connection = db.Database.GetDbConnection();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT nextval('{sequenceName}')";
+        if (connection.State != System.Data.ConnectionState.Open)
+            await connection.OpenAsync(ct);
+
+        var result = await command.ExecuteScalarAsync(ct);
+        return Convert.ToInt64(result);
     }
 }
