@@ -48,7 +48,8 @@ public sealed class SalesOrderService(ISalesOrderRepository repo) : ISalesOrderS
                     ProductId = l.ProductId,
                     UomId = l.UomId,
                     Quantity = l.Quantity,
-                    UnitPrice = l.UnitPrice
+                    UnitPrice = l.UnitPrice,
+                    DiscountPercent = l.DiscountPercent
                 }).ToList()
             };
 
@@ -91,7 +92,8 @@ public sealed class SalesOrderService(ISalesOrderRepository repo) : ISalesOrderS
                     ProductId = l.ProductId,
                     UomId = l.UomId,
                     Quantity = l.Quantity,
-                    UnitPrice = l.UnitPrice
+                    UnitPrice = l.UnitPrice,
+                    DiscountPercent = l.DiscountPercent
                 });
             }
 
@@ -126,9 +128,35 @@ public sealed class SalesOrderService(ISalesOrderRepository repo) : ISalesOrderS
 
     private static SalesOrderListDto ToListDto(SalesOrder o) =>
         new(o.Id, o.CustomerId, o.Customer?.Name, o.OrderNumber, o.OrderDate, o.Status,
-            o.Lines.Sum(l => l.Quantity * l.UnitPrice));
+            o.Lines.Sum(l => l.LineTotal));
 
-    private static SalesOrderReadDto ToReadDto(SalesOrder o) =>
-        new(o.Id, o.CustomerId, o.Customer?.Name, o.OrderNumber, o.OrderDate, o.Status,
-            o.Lines.Select(l => new SalesOrderLineReadDto(l.Id, l.ProductId, l.Product?.Name, l.UomId, l.Quantity, l.UnitPrice, l.Quantity * l.UnitPrice)).ToList());
+    private static SalesOrderReadDto ToReadDto(SalesOrder so)
+    {
+        var orderedQty = so.Lines.Sum(l => l.Quantity);
+
+        var deliveredQty = so.DeliveryNotes
+            .Where(dn => dn.Status == DeliveryNoteStatus.Delivered)
+            .SelectMany(dn => dn.Lines)
+            .Sum(l => l.Quantity);
+
+        var invoicedQty = so.CustomerInvoices
+            .Where(ci => ci.Status is CustomerInvoiceStatus.Posted or CustomerInvoiceStatus.Paid)
+            .SelectMany(ci => ci.Lines)
+            .Sum(l => l.Quantity);
+
+        return new SalesOrderReadDto(
+            so.Id,
+            so.CustomerId,
+            so.Customer?.Name,
+            so.OrderNumber,
+            so.OrderDate,
+            so.Status,
+            so.Lines.Select(l => new SalesOrderLineReadDto(
+                l.Id, l.ProductId, l.Product?.Name, l.UomId, l.Quantity, l.UnitPrice, l.DiscountPercent, l.LineTotal
+            )).ToList(),
+            orderedQty,
+            deliveredQty,
+            invoicedQty
+        );
+    }
 }

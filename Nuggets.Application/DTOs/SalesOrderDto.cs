@@ -19,6 +19,7 @@ public sealed record SalesOrderLineReadDto(
     Guid UomId,
     decimal Quantity,
     decimal UnitPrice,
+    decimal DiscountPercent,
     decimal LineTotal
 );
 
@@ -26,10 +27,13 @@ public sealed record SalesOrderReadDto(
     Guid Id,
     Guid CustomerId,
     string? CustomerName,
-    string? OrderNumber,
+    string OrderNumber,
     DateTime OrderDate,
     SalesOrderStatus Status,
-    List<SalesOrderLineReadDto> Lines
+    IReadOnlyList<SalesOrderLineReadDto> Lines,
+    decimal OrderedQty,
+    decimal DeliveredQty,
+    decimal InvoicedQty
 );
 
 public sealed record SalesOrderLineCreateDto(
@@ -37,7 +41,8 @@ public sealed record SalesOrderLineCreateDto(
     Guid ProductId,
     Guid UomId,
     decimal Quantity,
-    decimal UnitPrice
+    decimal UnitPrice,
+    decimal DiscountPercent
 );
 
 public sealed record SalesOrderCreateDto(
@@ -51,7 +56,8 @@ public sealed record SalesOrderLineUpdateDto(
     Guid ProductId,
     Guid UomId,
     decimal Quantity,
-    decimal UnitPrice
+    decimal UnitPrice,
+    decimal DiscountPercent
 );
 
 public sealed record SalesOrderUpdateDto(

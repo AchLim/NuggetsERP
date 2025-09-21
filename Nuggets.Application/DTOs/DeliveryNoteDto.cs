@@ -16,9 +16,9 @@ public record DeliveryNoteListDto(
 
 public record DeliveryNoteLineDto(
     Guid ProductId,
-    string ProductName,
+    string? ProductName,
     Guid UomId,
-    string UomAbbreviation,
+    string? UomAbbreviation,
     decimal Quantity
 );
 

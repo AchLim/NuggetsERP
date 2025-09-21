@@ -83,8 +83,9 @@ public sealed class InventoryService(
             var oldValue = oldQty * product.CurrentMovingAverageCost;
 
             // Convert purchase receipt line qty & cost into base UOM
+            var effectiveUnitCost = line.UnitCost * (1 - (line.DiscountPercent / 100m));
             var (qtyInBase, unitCostInBase) = await uomService.ConvertLineAsync(
-                product.Id, line.UomId, line.Quantity, line.UnitCost, ct);
+                product.Id, line.UomId, line.Quantity, effectiveUnitCost, ct);
 
             // Then use qtyInBase and unitCostInBase for all inventory + avg cost calc
             var newQty = qtyInBase;
@@ -190,6 +191,12 @@ public sealed class InventoryService(
                 product.Id, line.UomId, line.Quantity, product.CurrentMovingAverageCost, ct);
 
             var avgCost = product.CurrentMovingAverageCost;
+            
+            if (avgCost == 0)
+            {
+                throw new InvalidOperationException($"Cannot issue product {product.Name} with no cost basis. Please record purchases first.");
+            }
+            
             var totalCost = qtyInBase * avgCost;
 
             // 1. Stock Movement (Outbound)
@@ -286,8 +293,9 @@ public sealed class InventoryService(
                 return Result<bool>.Err($"No PO line found for product {line.ProductId}");
 
             // convert qty + cost into base UOM
+            var effectiveUnitCost = poLine.UnitCost * (1 - (poLine.DiscountPercent / 100m));
             var (qtyInBase, unitCostInBase) = await uomService.ConvertLineAsync(
-                product.Id, line.UomId, line.Quantity, poLine.UnitCost, ct);
+                product.Id, line.UomId, line.Quantity, effectiveUnitCost, ct);
 
             // current stock before GRN
             var oldQty = await movementRepo.GetNetQuantityAsync(product.Id, ct);

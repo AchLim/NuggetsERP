@@ -4,9 +4,9 @@ namespace Nuggets.Application.DTOs;
 
 public record GoodsReceiptNoteLineDto(
     Guid ProductId,
-    string ProductName,
+    string? ProductName,
     Guid UomId,
-    string UomAbbreviation,
+    string? UomAbbreviation,
     decimal Quantity
 );
 

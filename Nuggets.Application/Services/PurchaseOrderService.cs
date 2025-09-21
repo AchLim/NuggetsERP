@@ -29,7 +29,7 @@ public sealed class PurchaseOrderService(IPurchaseOrderRepository repo) : IPurch
 
     public async Task<Result<PurchaseOrderReadDto>> CreateAsync(PurchaseOrderCreateDto dto)
     {
-        if (dto.Lines == null || dto.Lines.Count == 0) return Result<PurchaseOrderReadDto>.Err("At least one line required", "VALIDATION_ERROR");
+        if (dto.Lines.Count == 0) return Result<PurchaseOrderReadDto>.Err("At least one line required", "VALIDATION_ERROR");
         await using var tx = await repo.BeginTransactionAsync();
         try
         {
@@ -46,7 +46,8 @@ public sealed class PurchaseOrderService(IPurchaseOrderRepository repo) : IPurch
                     ProductId = l.ProductId,
                     UomId = l.UomId,
                     Quantity = l.Quantity,
-                    UnitCost = l.UnitCost
+                    UnitCost = l.UnitCost,
+                    DiscountPercent = l.DiscountPercent
                 }).ToList()
             };
 
@@ -89,7 +90,8 @@ public sealed class PurchaseOrderService(IPurchaseOrderRepository repo) : IPurch
                     ProductId = l.ProductId,
                     UomId = l.UomId,
                     Quantity = l.Quantity,
-                    UnitCost = l.UnitCost
+                    UnitCost = l.UnitCost,
+                    DiscountPercent = l.DiscountPercent
                 });
             }
 
@@ -123,8 +125,54 @@ public sealed class PurchaseOrderService(IPurchaseOrderRepository repo) : IPurch
     }
 
     private static PurchaseOrderListDto ToListDto(PurchaseOrder p) =>
-        new(p.Id, p.VendorId, p.Vendor?.Name, p.OrderNumber, p.OrderDate, p.Status.ToString(), p.Lines.Sum(l => l.Quantity * l.UnitCost));
+        new(p.Id, p.VendorId, p.Vendor?.Name, p.OrderNumber, p.OrderDate, p.Status.ToString(), p.Lines.Sum(l => l.LineTotal));
 
-    private static PurchaseOrderReadDto ToReadDto(PurchaseOrder p) =>
-        new(p.Id, p.VendorId, p.Vendor?.Name, p.OrderNumber, p.OrderDate, p.Status, p.Lines.Select(l => new PurchaseOrderLineReadDto(l.Id, l.ProductId, l.Product?.Name, l.UomId, l.Quantity, l.UnitCost, l.Quantity * l.UnitCost)).ToList());
+    private static PurchaseOrderReadDto ToReadDto(PurchaseOrder po)
+    {
+        var orderedQty = po.Lines.Sum(l => l.Quantity);
+
+        var receivedQty = po.GoodsReceiptNotes
+            .Where(grn => grn.Status == GoodsReceiptNoteStatus.Received)
+            .SelectMany(grn => grn.Lines)
+            .Sum(l => l.Quantity);
+
+        var billedQty = po.VendorBills
+            .Where(vb => vb.Status == VendorBillStatus.Posted || vb.Status == VendorBillStatus.Paid)
+            .SelectMany(vb => vb.Lines)
+            .Sum(l => l.Quantity);
+
+        return new PurchaseOrderReadDto(
+            po.Id,
+            po.VendorId,
+            po.Vendor?.Name,
+            po.OrderNumber,
+            po.OrderDate,
+            po.Status,
+            po.Lines.Select(l =>
+            {
+                var receivedForLine = po.GoodsReceiptNotes
+                    .Where(grn => grn.Status is GoodsReceiptNoteStatus.Received)
+                    .SelectMany(grn => grn.Lines)
+                    .Where(gl => gl.ProductId == l.ProductId && gl.UomId == l.UomId)
+                    .Sum(gl => gl.Quantity);
+
+                var remaining = l.Quantity - receivedForLine;
+
+                return new PurchaseOrderLineReadDto(
+                    l.Id,
+                    l.ProductId,
+                    l.Product?.Name,
+                    l.UomId,
+                    l.Quantity,
+                    l.UnitCost,
+                    l.DiscountPercent,
+                    l.LineTotal,
+                    remaining
+                );
+            }).ToList(),
+            orderedQty,
+            receivedQty,
+            billedQty
+        );
+    }
 }

@@ -37,6 +37,9 @@ public sealed class Product : BaseEntity
     /// </summary>
     public Guid? VendorId { get; set; }
     public Vendor? Vendor { get; set; }
+    
+    
+    public CostMethod CostMethod { get; set; } = CostMethod.MovingAverage;
 
     /// <summary>
     /// All stock movements related to this product.
@@ -44,4 +47,11 @@ public sealed class Product : BaseEntity
     public ICollection<StockMovement> StockMovements { get; set; } = new List<StockMovement>();
     
     public ICollection<FoodRecipe> FoodRecipes { get; set; } = new List<FoodRecipe>();
+}
+
+public enum CostMethod
+{
+    Standard,
+    MovingAverage,
+    FIFO
 }

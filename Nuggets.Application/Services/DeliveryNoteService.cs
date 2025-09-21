@@ -9,17 +9,20 @@ namespace Nuggets.Application.Services;
 public sealed class DeliveryNoteService(
     IDeliveryNoteRepository repo,
     IProductRepository productRepo,
+    ISalesOrderRepository soRepo,
     IInventoryService inventoryService,
     IUomService uomService)
     : IDeliveryNoteService
 {
-    public async Task<Result<PagedResult<DeliveryNoteListDto>>> GetPagedAsync(int page, int pageSize)
+    public async Task<Result<PagedResult<DeliveryNoteListDto>>> GetPagedAsync(int page, int pageSize, Guid? salesOrderId = null)
     {
-        var (items, totalCount) = await repo.GetPagedAsync(page, pageSize);
-        var list = items.Select(ToListDto).ToList();
+        var result = salesOrderId.HasValue
+            ? await repo.GetPagedAsync(page, pageSize, repo.Query().Where(dn => dn.SalesOrderId == salesOrderId.Value))
+            : await repo.GetPagedAsync(page, pageSize);
 
+        var list = result.Items.Select(ToListDto).ToList();
         return Result<PagedResult<DeliveryNoteListDto>>.Ok(
-            new PagedResult<DeliveryNoteListDto>(list, totalCount, page, pageSize));
+            new PagedResult<DeliveryNoteListDto>(list, result.TotalCount, page, pageSize));
     }
 
     public async Task<Result<DeliveryNoteReadDto>> GetByIdAsync(Guid id)
@@ -33,6 +36,22 @@ public sealed class DeliveryNoteService(
 
     public async Task<Result<DeliveryNoteReadDto>> CreateAsync(DeliveryNoteCreateDto dto)
     {
+        var so = await soRepo.GetWithLinesAndDnsAsync(dto.SalesOrderId);
+        if (so == null)
+            return Result<DeliveryNoteReadDto>.Err("Sales Order not found", "NOT_FOUND");
+
+        var orderedQty = so.Lines.Sum(l => l.Quantity);
+
+        var deliveredQty = so.DeliveryNotes
+            .Where(dn => dn.Status is DeliveryNoteStatus.Delivered)
+            .SelectMany(dn => dn.Lines)
+            .Sum(l => l.Quantity);
+
+        var newQty = dto.Lines.Sum(l => l.Quantity);
+
+        if (deliveredQty + newQty > orderedQty)
+            return Result<DeliveryNoteReadDto>.Err("Cannot deliver more than ordered.", "VALIDATION_ERROR");
+        
         var draftLabel = $"Draft DN *{DateTime.UtcNow:yyyyMMddHHmmss}";
 
         var dn = new DeliveryNote
@@ -55,13 +74,29 @@ public sealed class DeliveryNoteService(
 
     public async Task<Result<DeliveryNoteReadDto>> UpdateAsync(Guid id, DeliveryNoteUpdateDto dto)
     {
+        var existing = await repo.GetByIdWithLinesAsync(id);
+        if (existing == null)
+            return Result<DeliveryNoteReadDto>.Err("Delivery Note not found.", "NOT_FOUND");
+
+        var so = await soRepo.GetWithLinesAndDnsAsync(existing.SalesOrderId);
+        if (so == null)
+            return Result<DeliveryNoteReadDto>.Err("Sales Order not found.", "NOT_FOUND");
+
+        var orderedQty = so.Lines.Sum(l => l.Quantity);
+
+        var deliveredQty = so.DeliveryNotes
+            .Where(dn => dn.Status == DeliveryNoteStatus.Delivered && dn.Id != existing.Id)
+            .SelectMany(dn => dn.Lines)
+            .Sum(l => l.Quantity);
+
+        var newQty = dto.Lines.Sum(l => l.Quantity);
+
+        if (deliveredQty + newQty > orderedQty)
+            return Result<DeliveryNoteReadDto>.Err("Cannot deliver more than ordered.", "VALIDATION_ERROR");
+
         await using var tx = await repo.BeginTransactionAsync();
         try
         {
-            var existing = await repo.GetByIdAsync(id);
-            if (existing is null)
-                return Result<DeliveryNoteReadDto>.Err("Delivery Note not found", "NOT_FOUND");
-
             existing.DeliveryDate = dto.DeliveryDate;
 
             existing.Lines.Clear();

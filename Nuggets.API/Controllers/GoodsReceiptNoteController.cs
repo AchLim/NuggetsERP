@@ -14,9 +14,9 @@ public class GoodsReceiptNoteController(ILogger<GoodsReceiptNoteController> logg
 
     [HttpGet]
     [Authorize(Policy = "INVENTORY:READ")]
-    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] Guid? purchaseOrderId = null)
     {
-        var result = await service.GetPagedAsync(page, pageSize);
+        var result = await service.GetPagedAsync(page, pageSize, purchaseOrderId);
         return result.IsSuccess
             ? Ok(result.Value)
             : BadRequest(new { error = result.Error, code = result.ErrorCode });

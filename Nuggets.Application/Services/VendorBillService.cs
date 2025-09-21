@@ -9,18 +9,22 @@ namespace Nuggets.Application.Services;
 public sealed class VendorBillService(
     IVendorBillRepository repo,
     IPurchaseReceiptRepository purchaseReceiptRepo,
+    IPurchaseOrderRepository poRepo,
     IJournalEntryRepository journalRepo,
     IChartOfAccountRepository coaRepo,
     IJournalEntryService journalService
 ) : IVendorBillService
 {
-    public async Task<Result<PagedResult<VendorBillListDto>>> GetPagedAsync(int page, int pageSize)
+    public async Task<Result<PagedResult<VendorBillListDto>>> GetPagedAsync(int page, int pageSize, Guid? purchaseOrderId = null)
     {
-        var (items, total) = await repo.GetPagedAsync(page, pageSize);
-        var list = items.Select(ToListDto).ToList();
-        return Result<PagedResult<VendorBillListDto>>.Ok(new PagedResult<VendorBillListDto>(list, total, page, pageSize));
-    }
+        var result = purchaseOrderId.HasValue
+            ? await repo.GetPagedAsync(page, pageSize, repo.Query().Where(vb => vb.PurchaseOrderId == purchaseOrderId.Value))
+            : await repo.GetPagedAsync(page, pageSize);
 
+        var list = result.Items.Select(ToListDto).ToList();
+        return Result<PagedResult<VendorBillListDto>>.Ok(
+            new PagedResult<VendorBillListDto>(list, result.TotalCount, page, pageSize));
+    }
     public async Task<Result<IReadOnlyList<VendorBillListDto>>> GetAllAsync()
     {
         var items = await repo.GetAllAsync();
@@ -35,6 +39,31 @@ public sealed class VendorBillService(
 
     public async Task<Result<VendorBillReadDto>> CreateAsync(VendorBillCreateDto dto)
     {
+        if (dto.PurchaseOrderId.HasValue)
+        {
+            var po = await poRepo.GetWithLinesAndBillsAsync(dto.PurchaseOrderId.Value);
+            if (po == null)
+                return Result<VendorBillReadDto>.Err("Purchase Order not found.", "NOT_FOUND");
+
+            var receivedQty = po.GoodsReceiptNotes
+                .Where(grn => grn.Status is GoodsReceiptNoteStatus.Received)
+                .SelectMany(grn => grn.Lines)
+                .Sum(l => l.Quantity);
+
+            var alreadyBilled = po.VendorBills
+                .Where(vb => vb.Status is VendorBillStatus.Posted or VendorBillStatus.Paid)
+                .SelectMany(vb => vb.Lines)
+                .Sum(l => l.Quantity);
+
+            var newQty = dto.Lines.Sum(l => l.Quantity);
+
+            if (receivedQty == 0)
+                return Result<VendorBillReadDto>.Err("Cannot create bill before receipt is recorded.", "VALIDATION_ERROR");
+
+            if (alreadyBilled + newQty > receivedQty)
+                return Result<VendorBillReadDto>.Err("Cannot bill more than received.", "VALIDATION_ERROR");
+        }
+        
         if (dto.Lines.Count == 0) return Result<VendorBillReadDto>.Err("At least one line required", "VALIDATION_ERROR");
         await using var tx = await repo.BeginTransactionAsync();
         try
@@ -47,19 +76,21 @@ public sealed class VendorBillService(
                 BillNumber = draftLabel,
                 BillDate = dto.BillDate,
                 Status = VendorBillStatus.Draft,
+                PurchaseOrderId = dto.PurchaseOrderId,
                 Lines = dto.Lines.Select(l => new VendorBillLine
                 {
                     ProductId = l.ProductId,
                     UomId = l.UomId,
                     Quantity = l.Quantity,
-                    UnitCost = l.UnitCost
+                    UnitCost = l.UnitCost,
+                    DiscountPercent = l.DiscountPercent
                 }).ToList()
             };
 
             await repo.AddAsync(ent);
 
             await tx.CommitAsync();
-            return Result<VendorBillReadDto>.Ok(ToReadDto(ent));
+            return await GetByIdAsync(ent.Id);
         }
         catch (Exception ex)
         {
@@ -70,51 +101,41 @@ public sealed class VendorBillService(
 
     public async Task<Result<VendorBillReadDto>> UpdateAsync(Guid id, VendorBillUpdateDto dto)
     {
+        var existing = await repo.GetByIdWithLinesAsync(id);
+        if (existing is null)
+            return Result<VendorBillReadDto>.Err("Vendor Bill not found.", "NOT_FOUND");
+
+        if (existing.PurchaseOrderId.HasValue)
+        {
+            var po = await poRepo.GetWithLinesAndBillsAsync(existing.PurchaseOrderId.Value);
+
+            if (po is null)
+                return Result<VendorBillReadDto>.Err("Purchase Order not found.", "NOT_FOUND");
+            var receivedQty = po.GoodsReceiptNotes
+                .Where(grn => grn.Status == GoodsReceiptNoteStatus.Received)
+                .SelectMany(grn => grn.Lines)
+                .Sum(l => l.Quantity);
+
+            var alreadyBilled = po.VendorBills
+                .Where(vb => (vb.Status is VendorBillStatus.Posted or VendorBillStatus.Paid) && vb.Id != existing.Id)
+                .SelectMany(vb => vb.Lines)
+                .Sum(l => l.Quantity);
+
+            var newQty = dto.Lines.Sum(l => l.Quantity);
+
+            if (alreadyBilled + newQty > receivedQty)
+                return Result<VendorBillReadDto>.Err("Cannot bill more than received.", "VALIDATION_ERROR");
+        }
+
+        
         await using var tx = await repo.BeginTransactionAsync();
         try
         {
-            var existing = await repo.GetByIdAsync(id);
-            if (existing is null) return Result<VendorBillReadDto>.Err("Vendor bill not found", "NOT_FOUND");
-
-            // ========== Handle Posting ==========
-            if (dto.Status == VendorBillStatus.Posted && 
-                (string.IsNullOrEmpty(existing.BillNumber) || existing.BillNumber.StartsWith("Draft VB")))
-            {
-                // Generate auto number
-                var nextNumber = await repo.GetNextSequenceValueAsync("vendor_bill_number_seq");
-                existing.BillNumber = $"VB/{dto.BillDate.Year}/{nextNumber:000000}";
-            }
-            
-            // Journal Entry: Dr GRNI / Cr AP
-            if (dto.Status == VendorBillStatus.Posted && existing.Status != VendorBillStatus.Posted)
-            {
-                var invAcc = await coaRepo.GetInventoryAccountAsync();
-                var apAcc  = await coaRepo.GetPayableAccountAsync();
-
-                var total = existing.Lines.Sum(l => l.Quantity * l.UnitCost);
-
-                var je = await journalService.PostAsync(
-                    $"Vendor Bill {existing.BillNumber} for PO {existing.PurchaseOrder?.OrderNumber}",
-                    dto.BillDate,
-                    new[]
-                    {
-                        (invAcc, total, 0m),  // Dr Inventory
-                        (apAcc, 0m, total)    // Cr Accounts Payable
-                    });
-                existing.JournalEntryId = je.Id;
-            }
-            else if (dto.Status == VendorBillStatus.Cancelled && existing.Status == VendorBillStatus.Posted)
-            {
-                if (existing.JournalEntryId.HasValue)
-                {
-                    var je = await journalRepo.GetByIdAsync(existing.JournalEntryId.Value);
-                    if (je != null) await journalService.ReverseAsync(je, "Vendor Bill cancelled");
-                }
-            }
-            
+            // update
             existing.VendorId = dto.VendorId;
             existing.BillDate = dto.BillDate;
             existing.Status = dto.Status;
+            existing.PurchaseOrderId = dto.PurchaseOrderId;
 
             existing.Lines.Clear();
             foreach (var l in dto.Lines)
@@ -124,21 +145,22 @@ public sealed class VendorBillService(
                     ProductId = l.ProductId,
                     UomId = l.UomId,
                     Quantity = l.Quantity,
-                    UnitCost = l.UnitCost
+                    UnitCost = l.UnitCost,
+                    DiscountPercent = l.DiscountPercent
                 });
             }
 
             await repo.UpdateAsync(existing);
-            
             await tx.CommitAsync();
-            return Result<VendorBillReadDto>.Ok(ToReadDto(existing));
+            return await GetByIdAsync(existing.Id);
         }
         catch (Exception ex)
         {
             await tx.RollbackAsync();
-            return Result<VendorBillReadDto>.Err($"Failed to update vendor bill: {ex.Message}", "DB_ERROR");
+            return Result<VendorBillReadDto>.Err($"Update failed: {ex.Message}", "DB_ERROR");
         }
     }
+
 
     public async Task<Result<bool>> DeleteAsync(Guid id)
     {
@@ -159,8 +181,29 @@ public sealed class VendorBillService(
     }
 
     private static VendorBillListDto ToListDto(VendorBill v) =>
-        new(v.Id, v.VendorId, v.Vendor?.Name, v.BillDate, v.Status.ToString(), v.Lines.Sum(l => l.Quantity * l.UnitCost));
+        new(v.Id, v.BillNumber, v.VendorId, v.Vendor?.Name, v.BillDate, v.PurchaseOrderId, v.PurchaseOrder?.OrderNumber, v.Status.ToString(), v.Lines.Sum(l => l.LineTotal));
 
-    private static VendorBillReadDto ToReadDto(VendorBill v) =>
-        new(v.Id, v.VendorId, v.Vendor?.Name, v.BillDate, v.Status, v.Lines.Select(l => new VendorBillLineReadDto(l.Id, l.ProductId, l.Product?.Name, l.UomId, l.Quantity, l.UnitCost, l.Quantity * l.UnitCost)).ToList());
+    private static VendorBillReadDto ToReadDto(VendorBill v)
+    {
+        var paidAmount = v.VendorPayments
+            .Where(vp => vp.Status is VendorPaymentStatus.Posted)
+            .Sum(l => l.Amount);
+
+        var billedAmount = v.Lines.Sum(l => l.LineTotal);
+
+        return new(
+            v.Id,
+            v.BillNumber,
+            v.VendorId,
+            v.Vendor?.Name,
+            v.BillDate,
+            v.PurchaseOrderId,
+            v.PurchaseOrder?.OrderNumber,
+            v.Status,
+            v.Lines.Select(l => new VendorBillLineReadDto(l.Id, l.ProductId, l.Product?.Name, l.UomId, l.Quantity,
+                l.UnitCost, l.DiscountPercent, l.LineTotal)).ToList(),
+            BilledAmount: billedAmount,
+            PaidAmount: paidAmount
+        );
+    }
 }

@@ -25,6 +25,25 @@ public class SalesOrderRepository(NuggetsDbContext db) : GenericRepository<Sales
             .Include(so => so.Lines)
             .FirstOrDefaultAsync(so => so.Id == id, ct);
     }
+    
+    
+
+    public async Task<SalesOrder?> GetWithLinesAndDnsAsync(Guid id, CancellationToken ct = default)
+    {
+        return await db.SalesOrders
+            .Include(so => so.Lines)
+            .Include(so => so.DeliveryNotes).ThenInclude(grn => grn.Lines)
+            .FirstOrDefaultAsync(so => so.Id == id, ct);
+    }
+
+    public async Task<SalesOrder?> GetWithLinesAndInvoicesAsync(Guid id, CancellationToken ct = default)
+    {
+        return await db.SalesOrders
+            .Include(so => so.Lines)
+            .Include(so => so.DeliveryNotes).ThenInclude(grn => grn.Lines)
+            .Include(so => so.CustomerInvoices).ThenInclude(vb => vb.Lines)
+            .FirstOrDefaultAsync(so => so.Id == id, ct);
+    }
 }
 
 public class CustomerInvoiceRepository(NuggetsDbContext db)
@@ -47,6 +66,13 @@ public class CustomerInvoiceRepository(NuggetsDbContext db)
         return await db.CustomerInvoices
             .Include(ci => ci.Customer)
             .Include(ci => ci.SalesOrder)
+            .Include(ci => ci.Lines)
+            .FirstOrDefaultAsync(ci => ci.Id == id, ct);
+    }
+
+    public async Task<CustomerInvoice?> GetByIdWithLinesAsync(Guid id, CancellationToken ct = default)
+    {
+        return await db.CustomerInvoices
             .Include(ci => ci.Lines)
             .FirstOrDefaultAsync(ci => ci.Id == id, ct);
     }

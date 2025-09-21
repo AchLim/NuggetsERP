@@ -54,7 +54,8 @@ public sealed class PurchaseReceiptService(
                     ProductId = l.ProductId,
                     UomId = l.UomId,
                     Quantity = l.Quantity,
-                    UnitCost = l.UnitCost
+                    UnitCost = l.UnitCost,
+                    DiscountPercent = l.DiscountPercent
                 }).ToList()
             };
 
@@ -90,7 +91,8 @@ public sealed class PurchaseReceiptService(
                     ProductId = l.ProductId,
                     UomId = l.UomId,
                     Quantity = l.Quantity,
-                    UnitCost = l.UnitCost
+                    UnitCost = l.UnitCost,
+                    DiscountPercent = l.DiscountPercent
                 });
             }
             
@@ -144,9 +146,9 @@ public sealed class PurchaseReceiptService(
     }
 
     private static PurchaseReceiptListDto ToListDto(PurchaseReceipt r) =>
-        new(r.Id, r.VendorId, r.Vendor.Name, r.ReceiptNumber, r.ReceiptDate, r.Status, r.Method, r.Lines.Sum(l => l.Quantity * l.UnitCost));
+        new(r.Id, r.VendorId, r.Vendor.Name, r.ReceiptNumber, r.ReceiptDate, r.Status, r.Method, r.Lines.Sum(l => l.LineTotal));
 
     private static PurchaseReceiptReadDto ToReadDto(PurchaseReceipt r) =>
         new(r.Id, r.VendorId, r.Vendor?.Name, r.ReceiptNumber, r.ReceiptDate, r.Status, r.Method,
-            r.Lines.Select(l => new PurchaseReceiptLineReadDto(l.Id, l.ProductId, l.Product?.Name, l.UomId, l.Quantity, l.UnitCost, l.Quantity * l.UnitCost)).ToList());
+            r.Lines.Select(l => new PurchaseReceiptLineReadDto(l.Id, l.ProductId, l.Product?.Name, l.UomId, l.Quantity, l.UnitCost, l.DiscountPercent, l.LineTotal)).ToList());
 }

@@ -15,6 +15,8 @@ public sealed class SalesOrder : BaseEntity
     public SalesOrderStatus Status { get; set; } = SalesOrderStatus.Draft;
 
     public ICollection<SalesOrderLine> Lines { get; set; } = new List<SalesOrderLine>();
+    public ICollection<DeliveryNote> DeliveryNotes { get; set; } = new List<DeliveryNote>();
+    public ICollection<CustomerInvoice> CustomerInvoices { get; set; } = new List<CustomerInvoice>();
 }
 
 public enum SalesOrderStatus

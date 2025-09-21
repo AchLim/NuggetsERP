@@ -90,7 +90,7 @@ public sealed class VendorPaymentService(
                 .Where(p => p.Status == VendorPaymentStatus.Posted && p.Id != existing.Id)
                 .Sum(p => p.Amount);
 
-            if (dto.Amount + alreadyPaid > bill.Lines.Sum(l => l.Quantity * l.UnitCost))
+            if (dto.Amount + alreadyPaid > bill.Lines.Sum(l => l.LineTotal))
                 return Result<VendorPaymentReadDto>.Err("Payment exceeds vendor bill balance", "VALIDATION_ERROR");
 
             // ----- (2) Handle Posting -----

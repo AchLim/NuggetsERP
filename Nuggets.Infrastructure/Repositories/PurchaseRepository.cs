@@ -14,6 +14,10 @@ public class PurchaseOrderRepository(NuggetsDbContext db)
         startingQuery = db.PurchaseOrders
             .Include(ci => ci.Vendor)
             .Include(ci => ci.Lines)
+            .Include(ci => ci.GoodsReceiptNotes)
+            .ThenInclude(grn => grn.Lines)
+            .Include(ci => ci.VendorBills)
+            .ThenInclude(vb => vb.Lines)
             .AsNoTracking()
             .AsQueryable();
         return await base.GetPagedAsync(page, pageSize, startingQuery, ct);
@@ -24,7 +28,28 @@ public class PurchaseOrderRepository(NuggetsDbContext db)
         return await db.PurchaseOrders
             .Include(so => so.Vendor)
             .Include(so => so.Lines)
+            .Include(ci => ci.GoodsReceiptNotes)
+            .ThenInclude(grn => grn.Lines)
+            .Include(ci => ci.VendorBills)
+            .ThenInclude(vb => vb.Lines)
             .FirstOrDefaultAsync(so => so.Id == id, ct);
+    }
+
+    public async Task<PurchaseOrder?> GetWithLinesAndGrnsAsync(Guid id, CancellationToken ct = default)
+    {
+        return await db.PurchaseOrders
+            .Include(po => po.Lines)
+            .Include(po => po.GoodsReceiptNotes).ThenInclude(grn => grn.Lines)
+            .FirstOrDefaultAsync(po => po.Id == id, ct);
+    }
+
+    public async Task<PurchaseOrder?> GetWithLinesAndBillsAsync(Guid id, CancellationToken ct = default)
+    {
+        return await db.PurchaseOrders
+            .Include(po => po.Lines)
+            .Include(po => po.GoodsReceiptNotes).ThenInclude(grn => grn.Lines)
+            .Include(po => po.VendorBills).ThenInclude(vb => vb.Lines)
+            .FirstOrDefaultAsync(po => po.Id == id, ct);
     }
 }
 
@@ -58,6 +83,7 @@ public class VendorBillRepository(NuggetsDbContext db) : GenericRepository<Vendo
     {
         startingQuery = db.VendorBills
             .Include(ci => ci.PurchaseOrder)
+            .Include(ci => ci.Vendor)
             .Include(ci => ci.Lines)
             .AsNoTracking()
             .AsQueryable();
@@ -68,6 +94,15 @@ public class VendorBillRepository(NuggetsDbContext db) : GenericRepository<Vendo
     {
         return await db.VendorBills
             .Include(so => so.PurchaseOrder)
+            .Include(so => so.VendorPayments)
+            .Include(ci => ci.Vendor)
+            .Include(so => so.Lines)
+            .FirstOrDefaultAsync(so => so.Id == id, ct);
+    }
+    
+    public async Task<VendorBill?> GetByIdWithLinesAsync(Guid id, CancellationToken ct = default)
+    {
+        return await db.VendorBills
             .Include(so => so.Lines)
             .FirstOrDefaultAsync(so => so.Id == id, ct);
     }

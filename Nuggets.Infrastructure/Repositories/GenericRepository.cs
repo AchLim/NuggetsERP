@@ -11,7 +11,8 @@ public class GenericRepository<T>(NuggetsDbContext db) : IGenericRepository<T>
     where T : class
 {
     private readonly DbSet<T> _dbSet = db.Set<T>();
-
+    
+    public IQueryable<T> Query() => _dbSet.AsNoTracking();
     public virtual async Task<T?> GetByIdAsync(Guid id, CancellationToken ct = default)
         => await _dbSet.FindAsync([id], ct);
 
@@ -53,7 +54,7 @@ public class GenericRepository<T>(NuggetsDbContext db) : IGenericRepository<T>
 
     public async Task<T> UpdateAsync(T entity, CancellationToken ct = default)
     {
-        _dbSet.Update(entity);
+        // _dbSet.Update(entity);
         await db.SaveChangesAsync(ct);
         return entity;
     }

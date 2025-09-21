@@ -20,6 +20,7 @@ public sealed record SalesReceiptLineReadDto(
     Guid UomId,
     decimal Quantity,
     decimal UnitPrice,
+    decimal DiscountPercent,
     decimal LineTotal
 );
 
@@ -34,8 +35,8 @@ public sealed record SalesReceiptReadDto(
     List<SalesReceiptLineReadDto> Lines
 );
 
-public sealed record SalesReceiptLineCreateDto(Guid? Id, Guid ProductId, Guid UomId, decimal Quantity, decimal UnitPrice);
+public sealed record SalesReceiptLineCreateDto(Guid? Id, Guid ProductId, Guid UomId, decimal Quantity, decimal UnitPrice, decimal DiscountPercent);
 public sealed record SalesReceiptCreateDto(Guid CustomerId, DateTime ReceiptDate, SalesReceiptPaymentMethod Method, List<SalesReceiptLineCreateDto> Lines);
 
-public sealed record SalesReceiptLineUpdateDto(Guid Id, Guid ProductId, Guid UomId, decimal Quantity, decimal UnitPrice);
+public sealed record SalesReceiptLineUpdateDto(Guid Id, Guid ProductId, Guid UomId, decimal Quantity, decimal UnitPrice, decimal DiscountPercent);
 public sealed record SalesReceiptUpdateDto(Guid CustomerId, DateTime ReceiptDate, SalesReceiptStatus Status, SalesReceiptPaymentMethod Method, List<SalesReceiptLineUpdateDto> Lines);

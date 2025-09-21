@@ -22,4 +22,10 @@ public sealed class SalesOrderLine : BaseEntity
 
     [Column(TypeName = "decimal(18,2)")]
     public decimal UnitPrice { get; set; }
+    
+    [Column(TypeName = "decimal(5,2)")]
+    public decimal DiscountPercent { get; set; } = 0m;
+
+    [NotMapped]
+    public decimal LineTotal => Quantity * UnitPrice * (1 - DiscountPercent / 100m);
 }

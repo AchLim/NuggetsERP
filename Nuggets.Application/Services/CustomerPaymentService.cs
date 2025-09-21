@@ -45,7 +45,7 @@ public sealed class CustomerPaymentService(
             .Where(p => p.Status == CustomerPaymentStatus.Posted)
             .Sum(p => p.Amount);
 
-        if (paidSoFar + dto.Amount > invoice.Lines.Sum(l => l.Quantity * l.UnitPrice))
+        if (paidSoFar + dto.Amount > invoice.Lines.Sum(l => l.LineTotal))
             return Result<CustomerPaymentReadDto>.Err("Payment exceeds invoice balance", "VALIDATION_ERROR");
 
         await using var tx = await repo.BeginTransactionAsync();
@@ -92,7 +92,7 @@ public sealed class CustomerPaymentService(
                 .Where(p => p.Status == CustomerPaymentStatus.Posted && p.Id != existing.Id)
                 .Sum(p => p.Amount);
 
-            var invoiceTotal = invoice.Lines.Sum(l => l.Quantity * l.UnitPrice);
+            var invoiceTotal = invoice.Lines.Sum(l => l.LineTotal);
 
             if (dto.Amount + alreadyPaid > invoiceTotal)
                 return Result<CustomerPaymentReadDto>.Err("Payment exceeds invoice balance", "VALIDATION_ERROR");

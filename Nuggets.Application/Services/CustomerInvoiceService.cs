@@ -8,16 +8,21 @@ namespace Nuggets.Application.Services;
 
 public sealed class CustomerInvoiceService(
     ICustomerInvoiceRepository repo,
+    ISalesOrderRepository soRepo,
     IJournalEntryRepository journalRepo,
     IChartOfAccountRepository coaRepo,
     IJournalEntryService journalService
 ) : ICustomerInvoiceService
 {
-    public async Task<Result<PagedResult<CustomerInvoiceListDto>>> GetPagedAsync(int page, int pageSize)
+    public async Task<Result<PagedResult<CustomerInvoiceListDto>>> GetPagedAsync(int page, int pageSize, Guid? salesOrderId = null)
     {
-        var (items, total) = await repo.GetPagedAsync(page, pageSize);
-        var list = items.Select(ToListDto).ToList();
-        return Result<PagedResult<CustomerInvoiceListDto>>.Ok(new PagedResult<CustomerInvoiceListDto>(list, total, page, pageSize));
+        var result = salesOrderId.HasValue
+            ? await repo.GetPagedAsync(page, pageSize, repo.Query().Where(ci => ci.SalesOrderId == salesOrderId.Value))
+            : await repo.GetPagedAsync(page, pageSize);
+
+        var list = result.Items.Select(ToListDto).ToList();
+        return Result<PagedResult<CustomerInvoiceListDto>>.Ok(
+            new PagedResult<CustomerInvoiceListDto>(list, result.TotalCount, page, pageSize));
     }
 
     public async Task<Result<IReadOnlyList<CustomerInvoiceListDto>>> GetAllAsync()
@@ -34,6 +39,25 @@ public sealed class CustomerInvoiceService(
 
     public async Task<Result<CustomerInvoiceReadDto>> CreateAsync(CustomerInvoiceCreateDto dto)
     {
+        if (dto.SalesOrderId.HasValue)
+        {
+            var so = await soRepo.GetWithLinesAndInvoicesAsync(dto.SalesOrderId.Value);
+            if (so == null)
+                return Result<CustomerInvoiceReadDto>.Err("Sales Order not found", "NOT_FOUND");
+
+            var orderedQty = so.Lines.Sum(l => l.Quantity);
+
+            var invoicedQty = so.CustomerInvoices
+                .Where(ci => ci.Status is CustomerInvoiceStatus.Posted or CustomerInvoiceStatus.Paid)
+                .SelectMany(ci => ci.Lines)
+                .Sum(l => l.Quantity);
+
+            var newQty = dto.Lines.Sum(l => l.Quantity);
+
+            if (invoicedQty + newQty > orderedQty)
+                return Result<CustomerInvoiceReadDto>.Err("Cannot invoice more than ordered.", "VALIDATION_ERROR");
+        }
+        
         if (dto.Lines.Count == 0) return Result<CustomerInvoiceReadDto>.Err("At least one line required", "VALIDATION_ERROR");
         await using var tx = await repo.BeginTransactionAsync();
         try
@@ -53,7 +77,8 @@ public sealed class CustomerInvoiceService(
                     ProductId = l.ProductId,
                     UomId = l.UomId,
                     Quantity = l.Quantity,
-                    UnitPrice = l.UnitPrice
+                    UnitPrice = l.UnitPrice,
+                    DiscountPercent = l.DiscountPercent
                 }).ToList()
             };
 
@@ -70,13 +95,32 @@ public sealed class CustomerInvoiceService(
 
     public async Task<Result<CustomerInvoiceReadDto>> UpdateAsync(Guid id, CustomerInvoiceUpdateDto dto)
     {
+        var existing = await repo.GetByIdWithLinesAsync(id);
+        if (existing == null)
+            return Result<CustomerInvoiceReadDto>.Err("Invoice not found.", "NOT_FOUND");
+
+        if (existing.SalesOrderId.HasValue)
+        {
+            var so = await soRepo.GetWithLinesAndInvoicesAsync(existing.SalesOrderId.Value);
+            if (so == null)
+                return Result<CustomerInvoiceReadDto>.Err("Sales Order not found.", "NOT_FOUND");
+
+            var orderedQty = so.Lines.Sum(l => l.Quantity);
+
+            var invoicedQty = so.CustomerInvoices
+                .Where(ci => (ci.Status is CustomerInvoiceStatus.Posted or CustomerInvoiceStatus.Paid) && ci.Id != existing.Id)
+                .SelectMany(ci => ci.Lines)
+                .Sum(l => l.Quantity);
+
+            var newQty = dto.Lines.Sum(l => l.Quantity);
+
+            if (invoicedQty + newQty > orderedQty)
+                return Result<CustomerInvoiceReadDto>.Err("Cannot invoice more than ordered.", "VALIDATION_ERROR");
+        }
+
         await using var tx = await repo.BeginTransactionAsync();
         try
         {
-            var existing = await repo.GetByIdAsync(id);
-            if (existing is null) return Result<CustomerInvoiceReadDto>.Err("Invoice not found", "NOT_FOUND");
-
-            
             if (dto.Status == CustomerInvoiceStatus.Posted && 
                 (string.IsNullOrEmpty(existing.InvoiceNumber) || existing.InvoiceNumber.StartsWith("Draft CI")))
             {
@@ -93,7 +137,7 @@ public sealed class CustomerInvoiceService(
                 var cogsAcc = await coaRepo.GetCogsAccountAsync();
                 var invAcc  = await coaRepo.GetInventoryAccountAsync();
 
-                var revenueTotal = existing.Lines.Sum(l => l.Quantity * l.UnitPrice);
+                var revenueTotal = existing.Lines.Sum(l => l.LineTotal);
 
                 var cogsTotal = existing.Lines.Sum(l => (l.Product?.CurrentMovingAverageCost ?? 0) * l.Quantity);
 
@@ -140,7 +184,8 @@ public sealed class CustomerInvoiceService(
                     ProductId = l.ProductId,
                     UomId = l.UomId,
                     Quantity = l.Quantity,
-                    UnitPrice = l.UnitPrice
+                    UnitPrice = l.UnitPrice,
+                    DiscountPercent = l.DiscountPercent
                 });
             }
 
@@ -174,9 +219,9 @@ public sealed class CustomerInvoiceService(
     }
 
     private static CustomerInvoiceListDto ToListDto(CustomerInvoice i) => new(i.Id, i.SalesOrderId, i.SalesOrder?.OrderNumber, i.CustomerId,
-        i.Customer?.Name, i.InvoiceNumber, i.InvoiceDate, i.DueDate, i.Status.ToString(), i.Lines.Sum(l => l.Quantity * l.UnitPrice));
+        i.Customer?.Name, i.InvoiceNumber, i.InvoiceDate, i.DueDate, i.Status.ToString(), i.Lines.Sum(l => l.LineTotal));
     
     private static CustomerInvoiceReadDto ToReadDto(CustomerInvoice i) =>
         new(i.Id, i.SalesOrderId, i.SalesOrder?.OrderNumber, i.CustomerId, i.Customer?.Name, i.InvoiceNumber, i.InvoiceDate, i.DueDate, i.Status,
-            i.Lines.Select(l => new CustomerInvoiceLineReadDto(l.Id, l.ProductId, l.Product?.Name, l.UomId, l.Quantity, l.UnitPrice, l.Quantity * l.UnitPrice)).ToList());
+            i.Lines.Select(l => new CustomerInvoiceLineReadDto(l.Id, l.ProductId, l.Product?.Name, l.UomId, l.Quantity, l.UnitPrice, l.DiscountPercent, l.LineTotal)).ToList());
 }

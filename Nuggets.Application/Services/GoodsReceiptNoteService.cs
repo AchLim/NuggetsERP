@@ -10,16 +10,28 @@ public sealed class GoodsReceiptNoteService(
     IGoodsReceiptNoteRepository repo,
     IProductRepository productRepo,
     IInventoryService inventoryService,
+    IPurchaseOrderRepository poRepo,
     IUomService uomService)
     : IGoodsReceiptNoteService
 {
-    public async Task<Result<PagedResult<GoodsReceiptNoteListDto>>> GetPagedAsync(int page, int pageSize)
+    public async Task<Result<PagedResult<GoodsReceiptNoteListDto>>> GetPagedAsync(int page, int pageSize, Guid? purchaseOrderId = null)
     {
-        var (items, totalCount) = await repo.GetPagedAsync(page, pageSize);
-        var list = items.Select(ToListDto).ToList();
+        (IReadOnlyList<GoodsReceiptNote> items, int totalCount) result;
+        if (purchaseOrderId.HasValue)
+        {
+            var query = repo.Query().Where(grn => grn.PurchaseOrderId == purchaseOrderId.Value);
+            result = await repo.GetPagedAsync(page, pageSize, query);
+        }
+        else
+        {
+            result = await repo.GetPagedAsync(page, pageSize);
+        }
+        
+
+        var list = result.items.Select(ToListDto).ToList();
 
         return Result<PagedResult<GoodsReceiptNoteListDto>>.Ok(
-            new PagedResult<GoodsReceiptNoteListDto>(list, totalCount, page, pageSize));
+            new PagedResult<GoodsReceiptNoteListDto>(list, result.totalCount, page, pageSize));
     }
 
     public async Task<Result<GoodsReceiptNoteReadDto>> GetByIdAsync(Guid id)
@@ -33,6 +45,21 @@ public sealed class GoodsReceiptNoteService(
 
     public async Task<Result<GoodsReceiptNoteReadDto>> CreateAsync(GoodsReceiptNoteCreateDto dto)
     {
+        var po = await poRepo.GetWithLinesAndGrnsAsync(dto.PurchaseOrderId);
+        if (po is null) return Result<GoodsReceiptNoteReadDto>.Err("Purchase Order not found", "NOT_FOUND");
+
+        // Business validation
+        var orderedQty = po.Lines.Sum(l => l.Quantity);
+        var receivedQty = po.GoodsReceiptNotes
+            .Where(grn => grn.Status is GoodsReceiptNoteStatus.Received)
+            .SelectMany(grn => grn.Lines)
+            .Sum(l => l.Quantity);
+
+        var newQty = dto.Lines.Sum(l => l.Quantity);
+
+        if (receivedQty + newQty > orderedQty)
+            return Result<GoodsReceiptNoteReadDto>.Err("Cannot receive more than PO ordered quantity", "VALIDATION_ERROR");
+
         var draftLabel = $"Draft GRN *{DateTime.UtcNow:yyyyMMddHHmmss}";
 
         var dn = new GoodsReceiptNote
@@ -55,13 +82,30 @@ public sealed class GoodsReceiptNoteService(
 
     public async Task<Result<GoodsReceiptNoteReadDto>> UpdateAsync(Guid id, GoodsReceiptNoteUpdateDto dto)
     {
+        var existing = await repo.GetByIdWithLinesAsync(id);
+        if (existing == null)
+            return Result<GoodsReceiptNoteReadDto>.Err("GRN not found", "NOT_FOUND");
+
+        var po = await poRepo.GetWithLinesAndGrnsAsync(existing.PurchaseOrderId);
+        if (po == null)
+            return Result<GoodsReceiptNoteReadDto>.Err("Purchase Order not found", "NOT_FOUND");
+
+        var orderedQty  = po.Lines.Sum(l => l.Quantity);
+
+        // 🚨 exclude this GRN itself from "already received"
+        var alreadyReceived = po.GoodsReceiptNotes
+            .Where(x => x.Status == GoodsReceiptNoteStatus.Received && x.Id != existing.Id)
+            .SelectMany(x => x.Lines)
+            .Sum(l => l.Quantity);
+
+        var newQty = dto.Lines.Sum(l => l.Quantity);
+
+        if (alreadyReceived + newQty > orderedQty)
+            return Result<GoodsReceiptNoteReadDto>.Err("Cannot receive more than ordered.", "VALIDATION_ERROR");
+
         await using var tx = await repo.BeginTransactionAsync();
         try
         {
-            var existing = await repo.GetByIdAsync(id);
-            if (existing is null)
-                return Result<GoodsReceiptNoteReadDto>.Err("GRN not found", "NOT_FOUND");
-
             existing.ReceiptDate = dto.ReceiptDate;
 
             existing.Lines.Clear();

@@ -5,6 +5,7 @@ namespace Nuggets.Application.Common.Interfaces;
 
 public interface IGenericRepository<T> where T : class
 {
+    IQueryable<T> Query();
     Task<T?> GetByIdAsync(Guid id, CancellationToken ct = default);
     Task<IReadOnlyList<T>> GetAllAsync(CancellationToken ct = default);
     Task<IReadOnlyList<T>> FindAsync(Expression<Func<T, bool>> predicate, CancellationToken ct = default);

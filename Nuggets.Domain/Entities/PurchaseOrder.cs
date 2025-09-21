@@ -16,6 +16,8 @@ public sealed class PurchaseOrder : BaseEntity
     public PurchaseOrderStatus Status { get; set; } = PurchaseOrderStatus.Draft;
 
     public ICollection<PurchaseOrderLine> Lines { get; set; } = new List<PurchaseOrderLine>();
+    public ICollection<GoodsReceiptNote> GoodsReceiptNotes { get; set; } = new List<GoodsReceiptNote>();
+    public ICollection<VendorBill> VendorBills { get; set; } = new List<VendorBill>();
 }
 
 public enum PurchaseOrderStatus

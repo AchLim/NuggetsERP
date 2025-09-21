@@ -55,7 +55,8 @@ public sealed class SalesReceiptService(
                     ProductId = l.ProductId,
                     UomId = l.UomId,
                     Quantity = l.Quantity,
-                    UnitPrice = l.UnitPrice
+                    UnitPrice = l.UnitPrice,
+                    DiscountPercent = l.DiscountPercent
                 }).ToList()
             };
 
@@ -91,7 +92,8 @@ public sealed class SalesReceiptService(
                     ProductId = l.ProductId,
                     UomId = l.UomId,
                     Quantity = l.Quantity,
-                    UnitPrice = l.UnitPrice
+                    UnitPrice = l.UnitPrice,
+                    DiscountPercent = l.DiscountPercent
                 });
             }
 
@@ -108,7 +110,7 @@ public sealed class SalesReceiptService(
                 var cashAcc = await coaRepo.GetCashOrBankAccountAsync(dto.Method);
                 var revAcc  = await coaRepo.GetRevenueAccountAsync();
 
-                var total = existing.Lines.Sum(l => l.Quantity * l.UnitPrice);
+                var total = existing.Lines.Sum(l => l.LineTotal);
 
                 var je = await journalService.PostAsync(
                     $"Sales Receipt {existing.ReceiptNumber}",
@@ -165,9 +167,9 @@ public sealed class SalesReceiptService(
     }
 
     private static SalesReceiptListDto ToListDto(SalesReceipt r) =>
-        new(r.Id, r.CustomerId, r.Customer?.Name, r.ReceiptNumber, r.ReceiptDate, r.Status, r.Method, r.Lines.Sum(l => l.Quantity * l.UnitPrice));
+        new(r.Id, r.CustomerId, r.Customer?.Name, r.ReceiptNumber, r.ReceiptDate, r.Status, r.Method, r.Lines.Sum(l => l.LineTotal));
 
     private static SalesReceiptReadDto ToReadDto(SalesReceipt r) =>
         new(r.Id, r.CustomerId, r.Customer?.Name, r.ReceiptNumber, r.ReceiptDate, r.Status, r.Method,
-            r.Lines.Select(l => new SalesReceiptLineReadDto(l.Id, l.ProductId, l.Product?.Name, l.UomId, l.Quantity, l.UnitPrice, l.Quantity * l.UnitPrice)).ToList());
+            r.Lines.Select(l => new SalesReceiptLineReadDto(l.Id, l.ProductId, l.Product?.Name, l.UomId, l.Quantity, l.UnitPrice, l.DiscountPercent, l.LineTotal)).ToList());
 }
