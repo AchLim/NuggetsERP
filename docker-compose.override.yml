@@ -1,5 +1,5 @@
 services:
-  nuggets-api:
+  api:
     build: ./Nuggets.API
     ports:
       - "5000:8080"
