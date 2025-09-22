@@ -13,6 +13,11 @@ services:
       - Jwt__Audience=nuggets_clients
     depends_on:
       - postgres
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   postgres:
     image: postgres:16
@@ -37,6 +42,11 @@ services:
       - ./certs:/etc/nginx/certs:ro
     ports:
       - "443:443"
+    healthcheck:
+      test: ["CMD", "curl", "-k", "-f", "https://localhost:443/api"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   pgdata:

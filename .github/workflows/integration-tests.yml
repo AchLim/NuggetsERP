@@ -13,16 +13,26 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
-      - name: Build and start services
-        run: docker compose -f docker-compose.yml -f docker-compose.override.yml up -d --build
 
-      # Simple loop to wait until API is responding
+      - name: Build and start services
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --build
+
+      # -------------------------------------------------
+      # Diagnostic step (optional but helpful)
+      # -------------------------------------------------
+      - name: List containers and ports
+        run: |
+          docker ps -a --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
+
+      # -------------------------------------------------
+      # Wait for the API via Nginx (now on 8443)
+      # -------------------------------------------------
       - name: Wait for API to be ready
         run: |
-          echo "Waiting for API readiness..."
+          echo "Waiting for API readiness on https://localhost:8443/api ..."
           for i in {1..30}; do
-            if curl -k -sSf https://localhost/api > /dev/null; then
+            if curl -k -sSf https://localhost:8443/api > /dev/null; then
               echo "✅ API is up!"
               exit 0
             fi
@@ -33,4 +43,5 @@ jobs:
 
       - name: Shutdown containers
         if: always()
-        run: docker compose -f docker-compose.yml -f docker-compose.override.yml down -v
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
