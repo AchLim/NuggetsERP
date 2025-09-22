@@ -21,10 +21,10 @@ jobs:
       # Run EF Core migrations dynamically inside the container
       - name: Run EF Core migrations
         run: |
-          docker exec api dotnet tool install --global dotnet-ef
+          docker exec nuggets-api dotnet tool install --global dotnet-ef
           TIMESTAMP=$(date +%Y%m%d%H%M%S)
           MIGRATION_NAME="AutoInit_$TIMESTAMP"
-          docker exec api bash -c "export PATH=\$PATH:/root/.dotnet/tools && \
+          docker exec nuggets-api bash -c "export PATH=\$PATH:/root/.dotnet/tools && \
             dotnet ef migrations add $MIGRATION_NAME \
               --project ../Nuggets.Infrastructure \
               --startup-project . \
