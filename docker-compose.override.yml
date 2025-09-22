@@ -1,6 +1,8 @@
 services:
   api:
-    build: ./Nuggets.API
+    build:
+      context: .
+      dockerfile: Nuggets.API/Dockerfile
     ports:
       - "5000:8080"
     depends_on:
