@@ -22,12 +22,13 @@ jobs:
       - name: Run EF Core migrations
         run: |
           docker exec api dotnet tool install --global dotnet-ef
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          MIGRATION_NAME="AutoInit_$TIMESTAMP"
           docker exec api bash -c "export PATH=\$PATH:/root/.dotnet/tools && \
-            dotnet ef migrations add AutoInit \
+            dotnet ef migrations add $MIGRATION_NAME \
               --project ../Nuggets.Infrastructure \
               --startup-project . \
-              --output-dir Migrations/Auto \
-              --force && \
+              --output-dir Migrations/Auto && \
             dotnet ef database update \
               --project ../Nuggets.Infrastructure \
               --startup-project ."
