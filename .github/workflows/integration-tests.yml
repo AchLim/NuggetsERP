@@ -22,7 +22,7 @@ jobs:
         run: |
           echo "Waiting for API readiness..."
           for i in {1..30}; do
-            if curl -sSf http://localhost:5000 > /dev/null; then
+            if curl -sSf http://localhost/api > /dev/null; then
               echo "✅ API is up!"
               exit 0
             fi
