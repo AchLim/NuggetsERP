@@ -1,0 +1,53 @@
+name: Integration Tests (Docker Compose)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  integration-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+      - name: Build and start services
+        run: docker compose -f docker-compose.yml -f docker-compose.override.yml up -d --build
+
+      # Run EF Core migrations dynamically inside the container
+      - name: Run EF Core migrations
+        run: |
+          docker exec api dotnet tool install --global dotnet-ef
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          MIGRATION_NAME="AutoInit_$TIMESTAMP"
+          docker exec api bash -c "export PATH=\$PATH:/root/.dotnet/tools && \
+            dotnet ef migrations add $MIGRATION_NAME \
+              --project ../Nuggets.Infrastructure \
+              --startup-project . \
+              --output-dir Migrations/Auto && \
+            dotnet ef database update \
+              --project ../Nuggets.Infrastructure \
+              --startup-project ."
+
+      # Wait for API and run a healthcheck
+      - name: Verify API Health
+        run: |
+          echo "Waiting for API to start..."
+          for i in {1..30}; do
+            if curl -sSf http://localhost:5000 > /dev/null; then
+              echo "API is running!"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "API did not respond in time."
+          exit 1
+
+      # Tear down
+      - name: Shutdown
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.override.yml down -v
