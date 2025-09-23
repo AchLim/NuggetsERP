@@ -44,7 +44,8 @@ public sealed class ProductService(IProductRepository repo) : IProductService
                 Name = dto.Name,
                 Description = dto.Description,
                 UomId = dto.UomId,
-                DefaultPrice = dto.DefaultPrice,
+                DefaultPurchasePrice = dto.DefaultPurchasePrice,
+                DefaultSalesPrice = dto.DefaultSalesPrice,
                 VendorId = dto.VendorId,
                 ProductCategoryId = dto.ProductCategoryId,
             };
@@ -75,7 +76,8 @@ public sealed class ProductService(IProductRepository repo) : IProductService
 
             existing.Name = dto.Name;
             existing.Description = dto.Description;
-            existing.DefaultPrice = dto.DefaultPrice;
+            existing.DefaultPurchasePrice = dto.DefaultPurchasePrice;
+            existing.DefaultSalesPrice = dto.DefaultSalesPrice;
             existing.VendorId = dto.VendorId;
             existing.ProductCategoryId = dto.ProductCategoryId;
             existing.UomId = dto.UomId;
@@ -112,11 +114,11 @@ public sealed class ProductService(IProductRepository repo) : IProductService
     }
 
     private static ProductListDto ToListDto(Product p) => 
-        new ProductListDto(p.Id, p.Name, p.DefaultPrice, p.ProductCategory?.Name, p.UomId, p.Uom.Name, p.Vendor?.Name,
+        new ProductListDto(p.Id, p.Name, p.DefaultPurchasePrice, p.DefaultSalesPrice, p.ProductCategory?.Name, p.UomId, p.Uom.Name, p.Vendor?.Name,
             p.StockMovements.Sum(sm => sm.MovementType == StockMovementType.Inbound ? sm.Quantity : -sm.Quantity));
 
     private static ProductReadDto ToReadDto(Product p) =>
-        new ProductReadDto(p.Id, p.Name, p.Description, p.UomId, p.Uom.Name, p.DefaultPrice,
+        new ProductReadDto(p.Id, p.Name, p.Description, p.UomId, p.Uom.Name, p.DefaultPurchasePrice, p.DefaultSalesPrice,
             p.ProductCategoryId, p.ProductCategory?.Name, p.VendorId, p.Vendor?.Name,
             p.StockMovements.Sum(sm => sm.MovementType == StockMovementType.Inbound ? sm.Quantity : -sm.Quantity),
             p.StockMovements.Select(sm => new StockMovementReadDto(

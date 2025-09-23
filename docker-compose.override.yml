@@ -1,12 +1,10 @@
-services:
+﻿services:
   api:
-    build:
-      context: .
-      dockerfile: Nuggets.API/Dockerfile
-    container_name: nuggets_api
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:8080
-      - ConnectionStrings__DefaultConnection=Host=postgres;Database=nuggets_erp;Username=postgres;Password=postgres
-    depends_on:
-      - postgres
+    volumes:
+      - ./Nuggets.API:/src/Nuggets.API   # only if you want local hot reload/mounting
+      - ./Nuggets.Application:/src/Nuggets.Application
+      - ./Nuggets.Domain:/src/Nuggets.Domain
+      - ./Nuggets.Infrastructure:/src/Nuggets.Infrastructure

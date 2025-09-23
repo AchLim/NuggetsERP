@@ -4,7 +4,8 @@ public record ProductCreateDto(
     string Name,
     string? Description,
     Guid UomId,
-    decimal DefaultPrice,
+    decimal DefaultPurchasePrice,
+    decimal DefaultSalesPrice,
     Guid? ProductCategoryId,
     Guid? VendorId
 );
@@ -13,7 +14,8 @@ public record ProductUpdateDto(
     string Name,
     string? Description,
     Guid UomId,
-    decimal DefaultPrice,
+    decimal DefaultPurchasePrice,
+    decimal DefaultSalesPrice,
     Guid? ProductCategoryId,
     Guid? VendorId
 );
@@ -25,7 +27,8 @@ public record ProductReadDto(
     string? Description,
     Guid UomId,
     string UomName,
-    decimal DefaultPrice,
+    decimal DefaultPurchasePrice,
+    decimal DefaultSalesPrice,
     Guid? ProductCategoryId,
     string? CategoryName,
     Guid? VendorId,
@@ -47,7 +50,8 @@ public record StockMovementReadDto(
 public record ProductListDto(
     Guid Id,
     string Name,
-    decimal DefaultPrice,
+    decimal DefaultPurchasePrice,
+    decimal DefaultSalesPrice,
     string? CategoryName,
     Guid UomId,
     string UomName,

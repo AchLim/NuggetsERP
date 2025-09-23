@@ -16,8 +16,14 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration config)
     {
-        var cs = config.GetConnectionString("DefaultConnection")
-                 ?? "Host=localhost;Port=5432;Database=nuggets_db;Username=postgres;Password=postgres";
+        var host = config["DB_HOST"] ?? "localhost";
+        var port = config["DB_PORT"] ?? "5432";
+        var db = config["DB_NAME"] ?? "nuggets_db";
+        var user = config["DB_USER"] ?? "postgres";
+        var password = config["DB_PASSWORD"] ?? "postgres";
+
+        var cs = $"Host={host};Port={port};Database={db};Username={user};Password={password}";
+        Console.WriteLine($"Using connection string: {cs}");
 
         services.AddDbContext<NuggetsDbContext>(o => o.UseNpgsql(cs, b => b.UseNodaTime()));
 

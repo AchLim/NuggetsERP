@@ -11,14 +11,23 @@ public sealed class Product : BaseEntity
     public string? Description { get; set; }
 
     /// <summary>
-    /// Default selling price (can be overridden in Sales Lines).
+    /// Default Purchase Price (used as hint when creating PO/vendor bill).
     /// </summary>
-    [Column(TypeName = "decimal(18,2)"), Range(0, 9999999)]
-    public decimal DefaultPrice { get; set; }
-
     [Column(TypeName = "decimal(18,2)")]
-    public decimal CurrentMovingAverageCost { get; set; } = 0m;
+    public decimal DefaultPurchasePrice { get; set; }
 
+    /// <summary>
+    /// Default Sales Price (used as list price in SO/Invoices when no Pricelist rule found).
+    /// </summary>
+    [Column(TypeName = "decimal(18,2)")]
+    public decimal DefaultSalesPrice { get; set; }
+
+    /// <summary>
+    /// Moving Average Cost for stock valuation. This changes as GRNs/PRs are received.
+    /// </summary>
+    [Column(TypeName = "decimal(18,4)")]
+    public decimal CurrentMovingAverageCost { get; set; } = 0m;
+    
     /// <summary>
     /// Base unit of measure (e.g. Bottle, Piece, Pack).
     /// </summary>

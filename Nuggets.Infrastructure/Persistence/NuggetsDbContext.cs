@@ -89,7 +89,6 @@ public class NuggetsDbContext : IdentityDbContext<AppUser, AppRole, Guid>
         builder.Entity<Product>(b =>
         {
             b.HasKey(x => x.Id);
-            b.Property(x => x.DefaultPrice).HasColumnType("numeric(18,4)");
             b.Property(x => x.Name).IsRequired().HasMaxLength(512);
 
             b.HasOne(x => x.Vendor)
