@@ -116,6 +116,7 @@ public class VendorPaymentRepository(NuggetsDbContext db)
     {
         startingQuery = db.VendorPayments
             .Include(ci => ci.VendorBill)
+            .ThenInclude(vb => vb.Vendor)
             .AsNoTracking()
             .AsQueryable();
         return await base.GetPagedAsync(page, pageSize, startingQuery, ct);
@@ -125,6 +126,7 @@ public class VendorPaymentRepository(NuggetsDbContext db)
     {
         return await db.VendorPayments
             .Include(ci => ci.VendorBill)
+            .ThenInclude(vb => vb.Vendor)
             .FirstOrDefaultAsync(so => so.Id == id, ct);
     }
 }

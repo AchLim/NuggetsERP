@@ -10,6 +10,7 @@ public sealed class VendorBillService(
     IVendorBillRepository repo,
     IPurchaseReceiptRepository purchaseReceiptRepo,
     IPurchaseOrderRepository poRepo,
+    IInventoryService inventoryService,
     IJournalEntryRepository journalRepo,
     IChartOfAccountRepository coaRepo,
     IJournalEntryService journalService
@@ -131,10 +132,8 @@ public sealed class VendorBillService(
         await using var tx = await repo.BeginTransactionAsync();
         try
         {
-            // update
             existing.VendorId = dto.VendorId;
             existing.BillDate = dto.BillDate;
-            existing.Status = dto.Status;
             existing.PurchaseOrderId = dto.PurchaseOrderId;
 
             existing.Lines.Clear();
@@ -149,6 +148,28 @@ public sealed class VendorBillService(
                     DiscountPercent = l.DiscountPercent
                 });
             }
+            
+            if (dto.Status == VendorBillStatus.Posted && 
+                (string.IsNullOrEmpty(existing.BillNumber) || existing.BillNumber.StartsWith("Draft VB")))
+            {
+                // Generate auto number
+                var nextNumber = await repo.GetNextSequenceValueAsync("vendor_bill_number_seq", tx);
+                existing.BillNumber = $"VB/{dto.BillDate.Year}/{nextNumber:000000}";
+            }
+            
+            // Handle posting: Create Journal Entries
+            if (dto.Status == VendorBillStatus.Posted && existing.Status != VendorBillStatus.Posted)
+            {
+                // Apply inventory and average cost update
+                await inventoryService.ApplyVendorBillAsync(existing.Id);
+            }
+            // --- Handle Cancellation ---
+            else if (dto.Status == VendorBillStatus.Cancelled && existing.Status == VendorBillStatus.Posted)
+            {
+                await inventoryService.RevertVendorBillAsync(existing.Id);
+            }
+
+            existing.Status = dto.Status;
 
             await repo.UpdateAsync(existing);
             await tx.CommitAsync();
@@ -157,7 +178,7 @@ public sealed class VendorBillService(
         catch (Exception ex)
         {
             await tx.RollbackAsync();
-            return Result<VendorBillReadDto>.Err($"Update failed: {ex.Message}", "DB_ERROR");
+            return Result<VendorBillReadDto>.Err($"Failed to update vendor bill: {ex.Message}", "DB_ERROR");
         }
     }
 
@@ -169,6 +190,12 @@ public sealed class VendorBillService(
         {
             var existing = await repo.GetByIdAsync(id);
             if (existing is null) return Result<bool>.Err("Vendor bill not found", "NOT_FOUND");
+
+            if (!(string.IsNullOrEmpty(existing.BillNumber) || existing.BillNumber.StartsWith("Draft VB")))
+            {
+                return Result<bool>.Err("You are not allowed to delete a transaction with existing number.", "VALIDATION_ERROR");
+            }
+            
             await repo.DeleteAsync(existing);
             await tx.CommitAsync();
             return Result<bool>.Ok(true);

@@ -123,7 +123,7 @@ public sealed class GoodsReceiptNoteService(
                 (string.IsNullOrEmpty(existing.GRNNumber) || existing.GRNNumber.StartsWith("Draft GRN")))
             {
                 // Generate auto number
-                var nextNumber = await repo.GetNextSequenceValueAsync("grn_number_seq");
+                var nextNumber = await repo.GetNextSequenceValueAsync("grn_number_seq", tx);
                 existing.GRNNumber = $"GRN/{dto.ReceiptDate.Year}/{nextNumber:000000}";
             }
 

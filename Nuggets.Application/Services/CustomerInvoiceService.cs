@@ -125,7 +125,7 @@ public sealed class CustomerInvoiceService(
                 (string.IsNullOrEmpty(existing.InvoiceNumber) || existing.InvoiceNumber.StartsWith("Draft CI")))
             {
                 // Generate auto number
-                var nextNumber = await repo.GetNextSequenceValueAsync("customer_invoice_number_seq");
+                var nextNumber = await repo.GetNextSequenceValueAsync("customer_invoice_number_seq", tx);
                 existing.InvoiceNumber = $"CI/{dto.InvoiceDate.Year}/{nextNumber:000000}";
             }
             
@@ -207,6 +207,12 @@ public sealed class CustomerInvoiceService(
         {
             var existing = await repo.GetByIdAsync(id);
             if (existing is null) return Result<bool>.Err("Invoice not found", "NOT_FOUND");
+
+            if (!(string.IsNullOrEmpty(existing.InvoiceNumber) || existing.InvoiceNumber.StartsWith("Draft CI")))
+            {
+                return Result<bool>.Err("You are not allowed to delete a transaction with existing number.", "VALIDATION_ERROR");
+            }
+            
             await repo.DeleteAsync(existing);
             await tx.CommitAsync();
             return Result<bool>.Ok(true);

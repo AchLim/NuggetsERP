@@ -67,7 +67,12 @@ public static class AccountSeeder
             new ChartOfAccount { Code = "5140", Name = "Transportation Expense", Type = AccountType.Expense },
             new ChartOfAccount { Code = "5150", Name = "Office Supplies Expense", Type = AccountType.Expense },
             new ChartOfAccount { Code = "5160", Name = "Depreciation Expense", Type = AccountType.Expense },
-            new ChartOfAccount { Code = "5170", Name = "Other General Expenses", Type = AccountType.Expense }
+            new ChartOfAccount { Code = "5170", Name = "Other General Expenses", Type = AccountType.Expense },
+            
+            // ------------------------------
+            // Inventory Adjustments
+            // ------------------------------
+            new ChartOfAccount { Code = "5180", Name = "Inventory Adjustment", Type = AccountType.Expense },
         };
 
         await db.ChartOfAccounts.AddRangeAsync(accounts);

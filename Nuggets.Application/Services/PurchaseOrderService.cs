@@ -74,7 +74,7 @@ public sealed class PurchaseOrderService(IPurchaseOrderRepository repo) : IPurch
                 (string.IsNullOrEmpty(existing.OrderNumber) || existing.OrderNumber.StartsWith("Draft PO")))
             {
                 // Generate auto number
-                var nextNumber = await repo.GetNextSequenceValueAsync("purchase_order_number_seq");
+                var nextNumber = await repo.GetNextSequenceValueAsync("purchase_order_number_seq", tx);
                 existing.OrderNumber = $"PO/{dto.OrderDate.Year}/{nextNumber:000000}";
             }
             

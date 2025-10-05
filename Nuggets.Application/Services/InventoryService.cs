@@ -9,6 +9,7 @@ namespace Nuggets.Application.Services;
 public sealed class InventoryService(
     IStockMovementRepository movementRepo,
     IProductRepository productRepo,
+    IVendorBillRepository vendorBillRepo,
     IPurchaseReceiptRepository purchaseReceiptRepo,
     ISalesReceiptRepository salesReceiptRepo,
     IGoodsReceiptNoteRepository grnRepo,
@@ -26,10 +27,12 @@ public sealed class InventoryService(
             m.Product.Name,
             m.MovementType,
             m.Quantity,
+            m.UnitCost,
             m.MovementDate,
             m.ReferenceType,
             m.ReferenceId,
-            GetReferenceUrl(m.ReferenceType, m.ReferenceId)
+            GetReferenceUrl(m.ReferenceType, m.ReferenceId),
+            m.Status.ToString()
         )).ToList();
 
         return Result<IReadOnlyList<StockMovementDto>>.Ok(result);
@@ -47,6 +50,7 @@ public sealed class InventoryService(
             {
                 StockMovementType.Inbound => sm.Quantity,
                 StockMovementType.Outbound => -sm.Quantity,
+                StockMovementType.Adjustment => sm.Quantity,
                 _ => 0
             });
 
@@ -57,15 +61,147 @@ public sealed class InventoryService(
                 product.Name,
                 m.MovementType,
                 m.Quantity,
+                m.UnitCost,
                 m.MovementDate,
                 m.ReferenceType,
                 m.ReferenceId,
-                GetReferenceUrl(m.ReferenceType, m.ReferenceId)
+                GetReferenceUrl(m.ReferenceType, m.ReferenceId),
+                m.Status.ToString()
             )).ToList();
 
-        var dto = new ProductInventoryDto(product.Name, currentStock, movements);
+        var dto = new ProductInventoryDto(
+            product.Name,
+            currentStock,
+            product.CurrentMovingAverageCost,
+            currentStock * product.CurrentMovingAverageCost, // total value
+            movements
+        );
         return Result<ProductInventoryDto>.Ok(dto);
     }
+    
+    // ===================== VENDOR BILL ==========================
+    public async Task<Result<bool>> ApplyVendorBillAsync(Guid vendorBillId, CancellationToken ct = default)
+    {
+        var bill = await vendorBillRepo.GetByIdAsync(vendorBillId, ct);
+        if (bill is null) return Result<bool>.Err("Vendor bill not found", "NOT_FOUND");
+
+        foreach (var line in bill.Lines)
+        {
+            var product = await productRepo.GetByIdAsync(line.ProductId, ct);
+            if (product == null) return Result<bool>.Err($"Product {line.ProductId} not found", "NOT_FOUND");
+
+            var oldQty = await movementRepo.GetNetQuantityAsync(product.Id, ct);
+            var oldValue = oldQty * product.CurrentMovingAverageCost;
+
+            var effectiveUnitCost = line.UnitCost * (1 - (line.DiscountPercent / 100m));
+            var (qtyInBase, unitCostInBase) = await uomService.ConvertLineAsync(
+                product.Id, line.UomId, line.Quantity, effectiveUnitCost, ct);
+
+            var newQty = qtyInBase;
+            var unitCost = unitCostInBase;
+            var newValue = newQty * unitCost;
+
+            // Recalculate weighted average cost
+            var newTotalQty = oldQty + newQty;
+            var newTotalValue = oldValue + newValue;
+            product.CurrentMovingAverageCost = newTotalQty > 0
+                ? Math.Round(newTotalValue / newTotalQty, 2)
+                : 0;
+
+            await productRepo.UpdateAsync(product, ct);
+
+            // 1. Stock Movement (Inbound)
+            var movement = new StockMovement
+            {
+                ProductId = line.ProductId,
+                MovementType = StockMovementType.Inbound,
+                Quantity = newQty,
+                UnitCost = unitCost,
+                MovementDate = bill.BillDate,
+                ReferenceId = bill.Id,
+                ReferenceType = "VendorBill"
+            };
+
+            await movementRepo.AddAsync(movement, ct);
+
+            // 2. Journal Entry: Debit Inventory, Credit Accounts Payable
+            var invAcc = await coaRepo.GetInventoryAccountAsync(ct);
+            var apAcc = await coaRepo.GetPayableAccountAsync(ct);
+
+            await journalService.PostAsync(
+                $"Inventory receipt for Vendor Bill {bill.BillNumber}",
+                bill.BillDate,
+                new[]
+                {
+                    (invAcc, newValue, 0m),
+                    (apAcc, 0m, newValue)
+                });
+        }
+
+        return Result<bool>.Ok(true);
+    }
+
+    public async Task<Result<bool>> RevertVendorBillAsync(Guid vendorBillId, CancellationToken ct = default)
+    {
+        var vendorBill = await vendorBillRepo.GetByIdWithLinesAsync(vendorBillId, ct);
+        if (vendorBill == null) return Result<bool>.Err("Vendor Bill not found", "NOT_FOUND");
+
+        var inbounds = await movementRepo.GetByReferenceAsync(vendorBill.Id, "VendorBill", ct);
+        var reversalValue = 0m;
+
+        foreach (var movement in inbounds)
+        {
+            // 1. Reverse stock movement (outbound)
+            var reverseMovement = new StockMovement
+            {
+                ProductId = movement.ProductId,
+                MovementType = StockMovementType.Outbound,
+                Quantity = movement.Quantity,
+                UnitCost = movement.UnitCost,
+                MovementDate = DateTime.UtcNow,
+                ReferenceId = vendorBill.Id,
+                ReferenceType = "VendorBill-Reversal"
+            };
+            await movementRepo.AddAsync(reverseMovement, ct);
+
+            reversalValue += movement.Quantity * movement.UnitCost;
+
+            // 2. Recalculate product moving average cost
+            var product = await productRepo.GetByIdAsync(movement.ProductId, ct);
+            if (product is { CostMethod: CostMethod.MovingAverage })
+            {
+                var oldQty = await movementRepo.GetNetQuantityAsync(product.Id, ct);
+                var oldValue = oldQty * product.CurrentMovingAverageCost;
+
+                var newQty = oldQty - movement.Quantity;
+                var newValue = oldValue - (movement.Quantity * movement.UnitCost);
+
+                product.CurrentMovingAverageCost = newQty > 0
+                    ? Math.Round(newValue / newQty, 2)
+                    : 0m;
+
+                await productRepo.UpdateAsync(product, ct);
+            }
+        }
+
+        // 3. Reverse journal entry (Inventory vs Accounts Payable)
+        var invAcc = await coaRepo.GetInventoryAccountAsync(ct);
+        var apAcc = await coaRepo.GetPayableAccountAsync(ct);
+
+        await journalService.PostAsync(
+            $"Reversal of Vendor Bill {vendorBill.BillNumber}",
+            DateTime.UtcNow,
+            new[]
+            {
+                (apAcc, reversalValue, 0m),  // Debit Accounts Payable
+                (invAcc, 0m, reversalValue)   // Credit Inventory
+            }
+        );
+
+        return Result<bool>.Ok(true);
+    }
+
+    
 
     // ===================== PURCHASE RECEIPT =====================
     public async Task<Result<bool>> ApplyPurchaseReceiptAsync(Guid purchaseReceiptId, CancellationToken ct = default)
@@ -90,7 +226,7 @@ public sealed class InventoryService(
             // Then use qtyInBase and unitCostInBase for all inventory + avg cost calc
             var newQty = qtyInBase;
             var unitCost = unitCostInBase;
-            
+
             var newValue = newQty * unitCost;
 
             // recalc weighted average
@@ -185,18 +321,19 @@ public sealed class InventoryService(
         {
             var product = await productRepo.GetByIdAsync(line.ProductId, ct);
             if (product == null) return Result<bool>.Err($"Product {line.ProductId} not found");
-            
+
             // Convert sales line quantity to base UOM
             var (qtyInBase, _) = await uomService.ConvertLineAsync(
                 product.Id, line.UomId, line.Quantity, product.CurrentMovingAverageCost, ct);
 
             var avgCost = product.CurrentMovingAverageCost;
-            
+
             if (avgCost == 0)
             {
-                throw new InvalidOperationException($"Cannot issue product {product.Name} with no cost basis. Please record purchases first.");
+                throw new InvalidOperationException(
+                    $"Cannot issue product {product.Name} with no cost basis. Please record purchases first.");
             }
-            
+
             var totalCost = qtyInBase * avgCost;
 
             // 1. Stock Movement (Outbound)
@@ -269,6 +406,21 @@ public sealed class InventoryService(
                     (cogsAcc, 0m, totalCost) // Cr COGS
                 }
             );
+
+            // 3. Recalculate product moving average cost after reversal
+            var product = await productRepo.GetByIdAsync(outMov.ProductId, ct);
+            if (product is { CostMethod: CostMethod.MovingAverage })
+            {
+                var oldQty = await movementRepo.GetNetQuantityAsync(product.Id, ct);
+                var oldValue = oldQty * product.CurrentMovingAverageCost;
+
+                // The reversal is adding inbound quantity back, so net qty increases by outMov.Quantity
+                var newQty = oldQty + outMov.Quantity;
+                var newValue = oldValue + totalCost;
+
+                product.CurrentMovingAverageCost = newQty > 0 ? Math.Round(newValue / newQty, 2) : 0;
+                await productRepo.UpdateAsync(product, ct);
+            }
         }
 
         return Result<bool>.Ok(true);
@@ -371,6 +523,21 @@ public sealed class InventoryService(
             await movementRepo.AddAsync(reverse, ct);
 
             reversalValue += movement.Quantity * movement.UnitCost;
+
+            // 2. Recalculate moving average cost after reversal
+            var product = await productRepo.GetByIdAsync(movement.ProductId, ct);
+            if (product != null && product.CostMethod == CostMethod.MovingAverage)
+            {
+                var oldQty = await movementRepo.GetNetQuantityAsync(product.Id, ct);
+                var oldValue = oldQty * product.CurrentMovingAverageCost;
+
+                // Since reversal is outbound, quantity decreases
+                var newQty = oldQty - movement.Quantity;
+                var newValue = oldValue - (movement.Quantity * movement.UnitCost);
+
+                product.CurrentMovingAverageCost = newQty > 0 ? Math.Round(newValue / newQty, 2) : 0;
+                await productRepo.UpdateAsync(product, ct);
+            }
         }
 
         // 2. Reverse journal posting
@@ -467,6 +634,21 @@ public sealed class InventoryService(
             await movementRepo.AddAsync(reverse, ct);
 
             reversalValue += movement.Quantity * movement.UnitCost;
+
+            // 2. Recalculate moving average cost after reversal
+            var product = await productRepo.GetByIdAsync(movement.ProductId, ct);
+            if (product is { CostMethod: CostMethod.MovingAverage })
+            {
+                var oldQty = await movementRepo.GetNetQuantityAsync(product.Id, ct);
+                var oldValue = oldQty * product.CurrentMovingAverageCost;
+
+                // Reversal inbound means quantity increases
+                var newQty = oldQty + movement.Quantity;
+                var newValue = oldValue + (movement.Quantity * movement.UnitCost);
+
+                product.CurrentMovingAverageCost = newQty > 0 ? Math.Round(newValue / newQty, 2) : 0;
+                await productRepo.UpdateAsync(product, ct);
+            }
         }
 
         // 2. Reverse journal entry
@@ -483,6 +665,233 @@ public sealed class InventoryService(
             });
 
         return Result<bool>.Ok(true);
+    }
+
+    public async Task<Result<bool>> ApplyInventoryAdjustmentAsync(
+        Guid productId,
+        decimal quantity,
+        decimal? unitCost,
+        CancellationToken ct = default)
+    {
+        
+        // todo: try except, transaction
+        var product = await productRepo.GetByIdAsync(productId, ct);
+        if (product == null)
+            return Result<bool>.Err("Product not found", "NOT_FOUND");
+
+        // Current stock and value
+        var oldQty = await movementRepo.GetNetQuantityAsync(product.Id, ct);
+        var oldValue = oldQty * product.CurrentMovingAverageCost;
+
+        var newQty = Math.Abs(quantity);
+        var movementType = quantity >= 0 ? StockMovementType.Inbound : StockMovementType.Outbound;
+        var effectiveUnitCost = unitCost ?? product.CurrentMovingAverageCost;
+
+        var adjustmentMovement = new StockMovement
+        {
+            ProductId = productId,
+            MovementType = StockMovementType.Adjustment,
+            Quantity = newQty,
+            UnitCost = effectiveUnitCost,
+            MovementDate = DateTime.UtcNow,
+            ReferenceType = "InventoryAdjustment",
+        };
+
+        await movementRepo.AddAsync(adjustmentMovement, ct);
+
+        // Recalculate moving average cost only for positive adjustments
+        if (quantity > 0 && product.CostMethod == CostMethod.MovingAverage)
+        {
+            var newValue = newQty * effectiveUnitCost;
+            var newTotalQty = oldQty + newQty;
+            var newTotalValue = oldValue + newValue;
+
+            product.CurrentMovingAverageCost = newTotalQty > 0
+                ? Math.Round(newTotalValue / newTotalQty, 2)
+                : 0;
+            await productRepo.UpdateAsync(product, ct);
+        }
+
+        // Journal Entry for audit trail
+        var invAcc = await coaRepo.GetInventoryAccountAsync(ct);
+        var adjAcc = await coaRepo.GetInventoryAdjustmentAccountAsync(ct);
+
+        var totalValue = newQty * effectiveUnitCost;
+
+        if (quantity > 0)
+        {
+            // Dr Inventory, Cr Adjustment Gain
+            await journalService.PostAsync(
+                $"Inventory Adjustment Increase for {product.Name}",
+                DateTime.UtcNow,
+                new[]
+                {
+                    (invAcc, totalValue, 0m),
+                    (adjAcc, 0m, totalValue)
+                });
+        }
+        else
+        {
+            // Dr Adjustment Loss, Cr Inventory
+            await journalService.PostAsync(
+                $"Inventory Adjustment Decrease for {product.Name}",
+                DateTime.UtcNow,
+                new[]
+                {
+                    (adjAcc, totalValue, 0m),
+                    (invAcc, 0m, totalValue)
+                });
+        }
+
+        return Result<bool>.Ok(true);
+    }
+
+    public async Task<Result<bool>> RevertInventoryAdjustmentAsync(Guid adjustmentId, CancellationToken ct = default)
+    {
+        var adjMovement = await movementRepo.GetByIdAsync(adjustmentId, ct);
+        if (adjMovement is not { MovementType: StockMovementType.Adjustment })
+            return Result<bool>.Err("Adjustment not found", "NOT_FOUND");
+
+        var reverse = new StockMovement
+        {
+            ProductId = adjMovement.ProductId,
+            MovementType = StockMovementType.Adjustment,
+            Quantity = -adjMovement.Quantity,
+            UnitCost = adjMovement.UnitCost,
+            MovementDate = DateTime.UtcNow,
+            ReferenceId = adjMovement.Id,
+            ReferenceType = adjMovement.ReferenceType + "-Reversal",
+        };
+        await movementRepo.AddAsync(reverse, ct);
+
+        adjMovement.Status = StockMovementStatus.Cancelled;
+        await movementRepo.UpdateAsync(adjMovement, ct);
+
+        // Recalculate moving average cost after reversal
+        var product = await productRepo.GetByIdAsync(adjMovement.ProductId, ct);
+        if (product != null && product.CostMethod == CostMethod.MovingAverage)
+        {
+            var oldQty = await movementRepo.GetNetQuantityAsync(product.Id, ct);
+            var oldValue = oldQty * product.CurrentMovingAverageCost;
+
+            // Quantity after reversal subtracts original adjustment quantity
+            var newQty = oldQty - adjMovement.Quantity;
+            var newValue = oldValue - (adjMovement.Quantity * adjMovement.UnitCost);
+
+            product.CurrentMovingAverageCost = newQty > 0 ? Math.Round(newValue / newQty, 2) : 0;
+            await productRepo.UpdateAsync(product, ct);
+        }
+
+        // Journal reversal (inverse of above)
+        var invAcc = await coaRepo.GetInventoryAccountAsync(ct);
+        var adjAcc = await coaRepo.GetInventoryAdjustmentAccountAsync(ct);
+
+        var totalValue = adjMovement.Quantity * adjMovement.UnitCost;
+
+        if (adjMovement.Quantity > 0)
+        {
+            await journalService.PostAsync(
+                $"Reversal of Adjustment {adjMovement.Id}",
+                DateTime.UtcNow,
+                new[]
+                {
+                    (adjAcc, totalValue, 0m),
+                    (invAcc, 0m, totalValue)
+                });
+        }
+        else
+        {
+            await journalService.PostAsync(
+                $"Reversal of Adjustment {adjMovement.Id}",
+                DateTime.UtcNow,
+                new[]
+                {
+                    (invAcc, totalValue, 0m),
+                    (adjAcc, 0m, totalValue)
+                });
+        }
+
+        return Result<bool>.Ok(true);
+    }
+    public async Task<Result<InventoryAdjustmentDto>> GetInventoryAdjustmentAsync(Guid adjustmentId, CancellationToken ct = default)
+    {
+        // todo: try except transaction
+        // Load movement with product
+        var mov = await movementRepo.GetByIdAsync(adjustmentId, ct);
+        if (mov is not { MovementType: StockMovementType.Adjustment })
+            return Result<InventoryAdjustmentDto>.Err("Adjustment not found", "NOT_FOUND");
+
+        var product = await productRepo.GetByIdAsync(mov.ProductId, ct);
+        if (product == null)
+            return Result<InventoryAdjustmentDto>.Err("Product not found", "NOT_FOUND");
+
+        // derive BEFORE state using movements before this one
+        var allMovements = product.StockMovements.OrderBy(m => m.MovementDate).ToList();
+
+        var priorMovements = allMovements.Where(m => m.MovementDate < mov.MovementDate).ToList();
+
+        decimal stockBefore = 0;
+        decimal valueBefore = 0;
+
+        foreach (var m in priorMovements)
+        {
+            if (m.MovementType == StockMovementType.Inbound || m is { MovementType: StockMovementType.Adjustment, Quantity: > 0 })
+            {
+                valueBefore += m.Quantity * m.UnitCost;
+                stockBefore += m.Quantity;
+            }
+            else if (m.MovementType == StockMovementType.Outbound || m is { MovementType: StockMovementType.Adjustment, Quantity: < 0 })
+            {
+                valueBefore -= Math.Abs(m.Quantity) * m.UnitCost;
+                stockBefore -= Math.Abs(m.Quantity);
+            }
+        }
+
+        var avgBefore = stockBefore > 0 ? valueBefore / stockBefore : 0;
+
+        // Apply this adjustment (after state)
+        var stockAfter = stockBefore + mov.Quantity;
+        var valueAfter = valueBefore + (mov.Quantity * mov.UnitCost);
+        var avgAfter = stockAfter > 0 ? valueAfter / stockAfter : 0;
+
+        var dto = new InventoryAdjustmentDto
+        {
+            Id = mov.Id,
+            ProductId = mov.ProductId,
+            ProductName = product.Name,
+            Quantity = mov.Quantity,
+            UnitCost = mov.UnitCost,
+            MovementDate = mov.MovementDate,
+            StockBefore = stockBefore,
+            StockAfter = stockAfter,
+            AvgCostBefore = avgBefore,
+            AvgCostAfter = avgAfter,
+            InventoryValueBefore = valueBefore,
+            InventoryValueAfter = valueAfter,
+            Status = mov.Status.ToString()
+        };
+
+        return Result<InventoryAdjustmentDto>.Ok(dto);
+    }
+
+    public async Task<Result<bool>> DeleteInventoryAdjustmentAsync(Guid adjustmentId, CancellationToken ct = default)
+    {
+        await using var tx = await movementRepo.BeginTransactionAsync();
+        try
+        {
+            var existing = await movementRepo.GetByIdAsync(adjustmentId, ct);
+            if (existing is null)
+                return Result<bool>.Err("Inventory Adjustment not found", "NOT_FOUND");
+
+            await movementRepo.DeleteAsync(existing, ct);
+            await tx.CommitAsync(ct);
+            return Result<bool>.Ok(true);
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync(ct);
+            return Result<bool>.Err($"Failed to delete inventory adjustment: {ex.Message}", "DB_ERROR");
+        }
     }
 
     private static string? GetReferenceUrl(string? referenceType, Guid? referenceId)

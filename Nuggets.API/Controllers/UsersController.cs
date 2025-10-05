@@ -112,7 +112,7 @@ public class UsersController(
         return Ok(new { success = true });
     }
 
-    [HttpDelete("{id}")]
+    [HttpDelete("{id:guid}")]
     [Authorize(Policy = "USERS:DELETE")]
     public async Task<IActionResult> Delete(Guid id)
     {
@@ -122,8 +122,8 @@ public class UsersController(
         var roles = await _userManager.GetRolesAsync(user);
 
         // ❌ Protect: don’t delete Admin users
-        if (roles.Contains("Admin"))
-            return BadRequest("Cannot delete Admin users");
+        if (roles.Any(role => role.Equals("Admin", StringComparison.OrdinalIgnoreCase)))
+            return BadRequest(new { error = "Cannot delete Admin users", code = "VALIDATION_ERROR"});
 
         var result = await _userManager.DeleteAsync(user);
         if (!result.Succeeded)

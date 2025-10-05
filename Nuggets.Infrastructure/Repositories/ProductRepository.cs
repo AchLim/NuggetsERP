@@ -33,7 +33,6 @@ public class ProductRepository(NuggetsDbContext db) : GenericRepository<Product>
             .Include(p => p.Uom)
             .Include(p => p.ProductCategory)
             .Include(p => p.Vendor)
-            .AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == id, ct);
     }
 

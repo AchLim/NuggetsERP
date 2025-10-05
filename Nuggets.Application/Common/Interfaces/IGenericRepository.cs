@@ -25,5 +25,5 @@ public interface IGenericRepository<T> where T : class
 
     Task<int> SaveChangesAsync(CancellationToken ct = default);
 
-    Task<long> GetNextSequenceValueAsync(string sequenceName, CancellationToken ct = default);
+    Task<long> GetNextSequenceValueAsync(string sequenceName, IDbContextTransaction transaction, CancellationToken ct = default);
 }

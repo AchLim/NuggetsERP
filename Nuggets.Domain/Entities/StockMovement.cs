@@ -18,6 +18,8 @@ public sealed class StockMovement : BaseEntity
     public decimal UnitCost { get; set; } // Cost per unit for Inbound (from Purchase)
     public DateTime MovementDate { get; set; } = DateTime.UtcNow;
 
+    public StockMovementStatus Status { get; set; } = StockMovementStatus.Posted;
+
     /// <summary>Optional link to Purchase or Sale Document</summary>
     public Guid? ReferenceId { get; set; }
     public string? ReferenceType { get; set; } // e.g. "Purchase", "Sale"
@@ -28,4 +30,10 @@ public enum StockMovementType
     Inbound = 1,
     Outbound = 2,
     Adjustment = 3
+}
+
+public enum StockMovementStatus
+{
+    Posted = 2,
+    Cancelled = 9
 }

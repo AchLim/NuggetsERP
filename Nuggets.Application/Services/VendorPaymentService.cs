@@ -14,21 +14,25 @@ public sealed class VendorPaymentService(
     IJournalEntryService journalService
 ) : IVendorPaymentService
 {
-    public async Task<Result<PagedResult<VendorPaymentListDto>>> GetPagedAsync(int page, int pageSize)
+    public async Task<Result<PagedResult<VendorPaymentListDto>>> GetPagedAsync(int page, int pageSize, Guid? vendorBillId = null)
     {
-        var (items, total) = await repo.GetPagedAsync(page, pageSize);
-        var list = items.Select(p => new VendorPaymentListDto(p.Id, p.VendorBill.VendorId, p.VendorBill.Vendor.Name,
-            p.PaymentDate, p.Amount, p.Method)).ToList();
+        
+        var result = vendorBillId.HasValue
+            ? await repo.GetPagedAsync(page, pageSize, repo.Query().Where(vb => vb.VendorBillId == vendorBillId.Value))
+            : await repo.GetPagedAsync(page, pageSize);
+
+        var list = result.Items.Select(p => new VendorPaymentListDto(p.Id, p.VendorBill.VendorId, p.VendorBill.Vendor.Name,
+            p.VendorBillId, p.VendorBill.BillNumber, p.PaymentNumber, p.PaymentDate, p.Amount, p.Method, p.Status.ToString())).ToList();
         return Result<PagedResult<VendorPaymentListDto>>.Ok(
-            new PagedResult<VendorPaymentListDto>(list, total, page, pageSize));
+            new PagedResult<VendorPaymentListDto>(list, result.TotalCount, page, pageSize));
     }
 
     public async Task<Result<IReadOnlyList<VendorPaymentListDto>>> GetAllAsync()
     {
         var items = await repo.GetAllAsync();
         return Result<IReadOnlyList<VendorPaymentListDto>>.Ok(items.Select(p =>
-            new VendorPaymentListDto(p.Id, p.VendorBill.VendorId, p.VendorBill.Vendor.Name, p.PaymentDate, p.Amount,
-                p.Method)).ToList());
+            new VendorPaymentListDto(p.Id, p.VendorBill.VendorId, p.VendorBill.Vendor.Name, p.VendorBillId, p.VendorBill.BillNumber, p.PaymentNumber, p.PaymentDate, p.Amount,
+                p.Method, p.Status.ToString())).ToList());
     }
 
     public async Task<Result<VendorPaymentReadDto>> GetByIdAsync(Guid id)
@@ -36,7 +40,7 @@ public sealed class VendorPaymentService(
         var ent = await repo.GetByIdAsync(id);
         return ent is not null
             ? Result<VendorPaymentReadDto>.Ok(new VendorPaymentReadDto(ent.Id, ent.VendorBill.VendorId,
-                ent.VendorBill.Vendor.Name, ent.VendorBillId, ent.PaymentDate, ent.Amount, ent.Method))
+                ent.VendorBill.Vendor.Name, ent.VendorBillId, ent.VendorBill.BillNumber, ent.PaymentNumber, ent.PaymentDate, ent.Amount, ent.Method, ent.Status.ToString()))
             : Result<VendorPaymentReadDto>.Err("Payment not found", "NOT_FOUND");
     }
 
@@ -46,25 +50,25 @@ public sealed class VendorPaymentService(
         await using var tx = await repo.BeginTransactionAsync();
         try
         {
-            var bill = await billRepo.GetByIdAsync(dto.BillId);
+            var bill = await billRepo.GetByIdAsync(dto.VendorBillId);
             if (bill is null) return Result<VendorPaymentReadDto>.Err("Vendor bill not found", "NOT_FOUND");
 
             var draftLabel = $"Draft VP *{DateTime.UtcNow:yyyyMMddHHmmss}";
 
             var ent = new VendorPayment
             {
-                VendorBillId = dto.BillId,
+                VendorBillId = dto.VendorBillId,
                 PaymentNumber = draftLabel,
                 PaymentDate = dto.PaymentDate,
                 Amount = dto.Amount,
-                Method = dto.Method
+                Method = dto.Method,
+                Status = VendorPaymentStatus.Draft
             };
 
             await repo.AddAsync(ent);
 
             await tx.CommitAsync();
-            return Result<VendorPaymentReadDto>.Ok(new VendorPaymentReadDto(ent.Id, ent.VendorBill.VendorId,
-                ent.VendorBill.Vendor.Name, ent.VendorBillId, ent.PaymentDate, ent.Amount, ent.Method));
+            return await GetByIdAsync(ent.Id);
         }
         catch (Exception ex)
         {
@@ -99,7 +103,7 @@ public sealed class VendorPaymentService(
                 // Auto-number
                 if (string.IsNullOrEmpty(existing.PaymentNumber) || existing.PaymentNumber.StartsWith("Draft VP"))
                 {
-                    var nextNumber = await repo.GetNextSequenceValueAsync("vendor_payment_number_seq");
+                    var nextNumber = await repo.GetNextSequenceValueAsync("vendor_payment_number_seq", tx);
                     existing.PaymentNumber = $"VP/{dto.PaymentDate.Year}/{nextNumber:000000}";
                 }
 
@@ -136,9 +140,8 @@ public sealed class VendorPaymentService(
 
             await repo.UpdateAsync(existing);
             await tx.CommitAsync();
-            return Result<VendorPaymentReadDto>.Ok(new VendorPaymentReadDto(existing.Id, existing.VendorBill.VendorId,
-                existing.VendorBill.Vendor.Name, existing.VendorBillId, existing.PaymentDate,
-                existing.Amount, existing.Method));
+
+            return await GetByIdAsync(existing.Id);
         }
         catch (Exception ex)
         {

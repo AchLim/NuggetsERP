@@ -76,7 +76,7 @@ public sealed class SalesOrderService(ISalesOrderRepository repo) : ISalesOrderS
                 (string.IsNullOrEmpty(existing.OrderNumber) || existing.OrderNumber.StartsWith("Draft SO")))
             {
                 // Generate auto number
-                var nextNumber = await repo.GetNextSequenceValueAsync("sales_order_number_seq");
+                var nextNumber = await repo.GetNextSequenceValueAsync("sales_order_number_seq", tx);
                 existing.OrderNumber = $"SO/{dto.OrderDate.Year}/{nextNumber:000000}";
             }
             

@@ -114,7 +114,7 @@ public sealed class DeliveryNoteService(
                 (string.IsNullOrEmpty(existing.DeliveryNumber) || existing.DeliveryNumber.StartsWith("Draft DN")))
             {
                 // Generate auto number
-                var nextNumber = await repo.GetNextSequenceValueAsync("dn_number_seq");
+                var nextNumber = await repo.GetNextSequenceValueAsync("dn_number_seq", tx);
                 existing.DeliveryNumber = $"DN/{dto.DeliveryDate.Year}/{nextNumber:000000}";
             }
 

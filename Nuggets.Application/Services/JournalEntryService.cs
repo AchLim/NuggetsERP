@@ -99,7 +99,7 @@ public sealed class JournalEntryService(IJournalEntryRepository repo, IChartOfAc
                 (string.IsNullOrEmpty(existing.EntryNumber) || existing.EntryNumber.StartsWith("Draft JE")))
             {
                 // Generate auto number
-                var nextNumber = await repo.GetNextSequenceValueAsync("journal_entry_number_seq");
+                var nextNumber = await repo.GetNextSequenceValueAsync("journal_entry_number_seq", tx);
                 existing.EntryNumber = $"JE/{dto.EntryDate.Year}/{nextNumber:000000}";
             }
             
@@ -169,45 +169,66 @@ public sealed class JournalEntryService(IJournalEntryRepository repo, IChartOfAc
         DateTime entryDate,
         (ChartOfAccount account, decimal debit, decimal credit)[] lines)
     {
-        var nextEntryNumber = await repo.GetNextSequenceValueAsync("journal_entry_number_seq");
-        var je = new JournalEntry
+        
+        await using var tx = await repo.BeginTransactionAsync();
+        try
         {
-            EntryNumber = $"JE/{entryDate.Year}/{nextEntryNumber:000000}",
-            EntryDate = entryDate,
-            Reference = reference,
-            Status = JournalEntryStatus.Posted,
-            Items = lines
-                .Where(l => l.debit != 0 || l.credit != 0)
-                .Select(l => new JournalItem
+            var nextEntryNumber = await repo.GetNextSequenceValueAsync("journal_entry_number_seq", tx);
+            var je = new JournalEntry
             {
-                AccountId = l.account.Id,
-                Debit = l.debit,
-                Credit = l.credit
-            }).ToList()
-        };
+                EntryNumber = $"JE/{entryDate.Year}/{nextEntryNumber:000000}",
+                EntryDate = entryDate,
+                Reference = reference,
+                Status = JournalEntryStatus.Posted,
+                Items = lines
+                    .Where(l => l.debit != 0 || l.credit != 0)
+                    .Select(l => new JournalItem
+                    {
+                        AccountId = l.account.Id,
+                        Debit = l.debit,
+                        Credit = l.credit
+                    }).ToList()
+            };
 
-        await repo.AddAsync(je);
-        return je;
+            await repo.AddAsync(je);
+            await tx.CommitAsync();
+            return je;
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync();
+            throw new Exception($"Failed to post journal entry: {ex.Message}", ex);
+        }
     }
 
     public async Task<JournalEntry> ReverseAsync(JournalEntry original, string reason)
     {
-        var nextEntryNumber = await repo.GetNextSequenceValueAsync("journal_entry_number_seq");
-        var reversal = new JournalEntry
+        await using var tx = await repo.BeginTransactionAsync();
+        try
         {
-            EntryNumber = $"JE/{original.EntryDate.Year}/{nextEntryNumber:000000}",
-            EntryDate = DateTime.UtcNow,
-            Reference = $"Reversal ({reason}) of {original.EntryNumber}",
-            Status = JournalEntryStatus.Posted,
-            Items = original.Items.Select(i => new JournalItem
+            var nextEntryNumber = await repo.GetNextSequenceValueAsync("journal_entry_number_seq", tx);
+            var reversal = new JournalEntry
             {
-                AccountId = i.AccountId,
-                Debit = i.Credit,
-                Credit = i.Debit
-            }).ToList()
-        };
+                EntryNumber = $"JE/{original.EntryDate.Year}/{nextEntryNumber:000000}",
+                EntryDate = DateTime.UtcNow,
+                Reference = $"Reversal ({reason}) of {original.EntryNumber}",
+                Status = JournalEntryStatus.Posted,
+                Items = original.Items.Select(i => new JournalItem
+                {
+                    AccountId = i.AccountId,
+                    Debit = i.Credit,
+                    Credit = i.Debit
+                }).ToList()
+            };
 
-        await repo.AddAsync(reversal);
-        return reversal;
+            await repo.AddAsync(reversal);
+            await tx.CommitAsync();
+            return reversal;
+        }
+        catch (Exception ex)
+        {
+            await tx.RollbackAsync();
+            throw new Exception($"Failed to reverse journal entry: {ex.Message}", ex);
+        }
     }
 }

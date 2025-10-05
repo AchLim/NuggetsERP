@@ -76,13 +76,13 @@ public class GenericRepository<T>(NuggetsDbContext db) : IGenericRepository<T>
     }
     
     
-    public virtual async Task<long> GetNextSequenceValueAsync(string sequenceName, CancellationToken ct = default)
+    public virtual async Task<long> GetNextSequenceValueAsync(string sequenceName, IDbContextTransaction transaction, CancellationToken ct = default)
     {
-        var connection = db.Database.GetDbConnection();
+        var dbTransaction = transaction.GetDbTransaction();
+        var connection = dbTransaction.Connection ?? db.Database.GetDbConnection();
         await using var command = connection.CreateCommand();
+        command.Transaction = dbTransaction;
         command.CommandText = $"SELECT nextval('{sequenceName}')";
-        if (connection.State != System.Data.ConnectionState.Open)
-            await connection.OpenAsync(ct);
 
         var result = await command.ExecuteScalarAsync(ct);
         return Convert.ToInt64(result);

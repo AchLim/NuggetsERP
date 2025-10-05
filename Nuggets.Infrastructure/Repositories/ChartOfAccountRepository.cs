@@ -108,6 +108,9 @@ public sealed class ChartOfAccountRepository(NuggetsDbContext db)
     public async Task<ChartOfAccount> GetCogsAccountAsync(CancellationToken ct = default) =>
         await FindByCodeAsync("5000", "Cost of Goods Sold", ct);
 
+    public async Task<ChartOfAccount> GetInventoryAdjustmentAccountAsync(CancellationToken ct = default) =>
+        await FindByCodeAsync("5180", "Inventory Adjustment", ct);
+
     // -------------------- TAX ACCOUNTS --------------------
 
     public async Task<ChartOfAccount> GetVatInputAccountAsync(CancellationToken ct = default) =>
@@ -123,7 +126,7 @@ public sealed class ChartOfAccountRepository(NuggetsDbContext db)
 
     public async Task<ChartOfAccount> GetGrniAccountAsync(CancellationToken ct = default) =>
         await FindByCodeAsync("2200", "Goods Received Not Invoiced (GRNI)", ct);
-
+    
     // -------------------- HELPER --------------------
     private async Task<ChartOfAccount> FindByCodeAsync(
         string code, string friendlyName, CancellationToken ct = default)

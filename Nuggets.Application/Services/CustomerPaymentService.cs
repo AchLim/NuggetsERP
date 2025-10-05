@@ -103,7 +103,7 @@ public sealed class CustomerPaymentService(
                 // 1. Auto Generate Payment Number if payment still has a draft number
                 if (string.IsNullOrEmpty(existing.PaymentNumber) || existing.PaymentNumber.StartsWith("Draft CP"))
                 {
-                    var nextNumber = await repo.GetNextSequenceValueAsync("customer_payment_number_seq");
+                    var nextNumber = await repo.GetNextSequenceValueAsync("customer_payment_number_seq", tx);
                     existing.PaymentNumber = $"CP/{dto.PaymentDate.Year}/{nextNumber:000000}";
                 }
 
@@ -169,10 +169,10 @@ public sealed class CustomerPaymentService(
 
     public CustomerPaymentListDto ToListDto(CustomerPayment p) => new CustomerPaymentListDto(p.Id,
         p.CustomerInvoiceId, p.CustomerInvoice.InvoiceNumber, p.CustomerInvoice.CustomerId,
-        p.CustomerInvoice.Customer.Name, p.PaymentDate, p.Amount, p.Status, p.Method, p.PaymentNumber);
+        p.CustomerInvoice.Customer.Name, p.PaymentDate, p.Amount, p.Status.ToString(), p.Method, p.PaymentNumber);
     
 
     public CustomerPaymentReadDto ToReadDto(CustomerPayment p) => new CustomerPaymentReadDto(p.Id,
         p.CustomerInvoiceId, p.CustomerInvoice.InvoiceNumber, p.CustomerInvoice.CustomerId,
-        p.CustomerInvoice.Customer.Name, p.PaymentDate, p.Amount, p.Status, p.Method, p.PaymentNumber);
+        p.CustomerInvoice.Customer.Name, p.PaymentDate, p.Amount, p.Status.ToString(), p.Method, p.PaymentNumber);
 }

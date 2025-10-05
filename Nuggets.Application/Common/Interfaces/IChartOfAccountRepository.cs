@@ -24,4 +24,6 @@ public interface IChartOfAccountRepository : IGenericRepository<ChartOfAccount>
 
     // Clearing Accounts
     Task<ChartOfAccount> GetGrniAccountAsync(CancellationToken ct = default);
+
+    Task<ChartOfAccount> GetInventoryAdjustmentAccountAsync(CancellationToken ct = default);
 }

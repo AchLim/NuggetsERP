@@ -101,7 +101,7 @@ public sealed class SalesReceiptService(
                 (string.IsNullOrEmpty(existing.ReceiptNumber) || existing.ReceiptNumber.StartsWith("Draft SR")))
             {
                 // Generate auto number
-                var nextNumber = await repo.GetNextSequenceValueAsync("sales_receipt_number_seq");
+                var nextNumber = await repo.GetNextSequenceValueAsync("sales_receipt_number_seq", tx);
                 existing.ReceiptNumber = $"SR/{dto.ReceiptDate.Year}/{nextNumber:000000}";
             }
             

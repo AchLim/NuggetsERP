@@ -100,7 +100,7 @@ public sealed class PurchaseReceiptService(
                 (string.IsNullOrEmpty(existing.ReceiptNumber) || existing.ReceiptNumber.StartsWith("Draft PR")))
             {
                 // Generate auto number
-                var nextNumber = await repo.GetNextSequenceValueAsync("purchase_receipt_number_seq");
+                var nextNumber = await repo.GetNextSequenceValueAsync("purchase_receipt_number_seq", tx);
                 existing.ReceiptNumber = $"PR/{dto.ReceiptDate.Year}/{nextNumber:000000}";
             }
 
