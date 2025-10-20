@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Configuration;
 using Nuggets.Domain.Entities;
 using Nuggets.Infrastructure.Identity;
 using Nuggets.Infrastructure.Persistence;
@@ -23,8 +24,13 @@ public static class IdentitySeeder
     public static async Task SeedDatabaseAsync(
         UserManager<AppUser> userManager,
         RoleManager<AppRole> roleManager,
-        NuggetsDbContext dbContext)
+        NuggetsDbContext dbContext,
+        IConfiguration config)
     {
+        var adminEmail = config["ADMIN_EMAIL"] ?? "admin@example.com";
+        var adminUserName = config["ADMIN_USERNAME"] ?? "admin";
+        var adminPassword = config["ADMIN_PASSWORD"] ?? "admin";
+
         // Ensure roles exist
         foreach (var roleName in Roles)
         {
@@ -39,17 +45,17 @@ public static class IdentitySeeder
         }
 
         // Ensure default admin user exists
-        var adminUser = await userManager.FindByNameAsync(DefaultAdminUserName);
+        var adminUser = await userManager.FindByNameAsync(adminUserName);
         if (adminUser == null)
         {
             adminUser = new AppUser
             {
-                UserName = DefaultAdminUserName,
-                Email = DefaultAdminEmail,
+                UserName = adminUserName,
+                Email = adminEmail,
                 EmailConfirmed = true
             };
 
-            var result = await userManager.CreateAsync(adminUser, DefaultAdminPassword);
+            var result = await userManager.CreateAsync(adminUser, adminPassword);
             if (!result.Succeeded)
             {
                 throw new Exception("Failed to create default admin user: " +
@@ -63,8 +69,6 @@ public static class IdentitySeeder
             await userManager.AddToRoleAsync(adminUser, "Admin");
         }
         
-        
-
         // Ensure default Company exists
         var defaultCompany = dbContext.Companies.FirstOrDefault(c => c.Name == "PT. Trading Nuggets Indonesia");
         if (defaultCompany == null)

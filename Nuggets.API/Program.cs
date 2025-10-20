@@ -1,6 +1,9 @@
 using System.Net;
+using System.Text;
 using System.Security.Claims;
 using System.Text.Json.Serialization;
+using Serilog;
+using Serilog.Events;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
@@ -8,6 +11,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Versioning;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.Extensions.Configuration;
 using Nuggets.Domain.Authorization;
 using Nuggets.Infrastructure;
 using Nuggets.Infrastructure.Identity;
@@ -38,6 +42,22 @@ builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "Nuggets API", Version = "v1" });
 });
 
+// ------------------ Serilog Configuration ------------------
+// Use detailed SQL/logs only in Development
+var isDev = builder.Environment.IsDevelopment();
+
+Log.Logger = new LoggerConfiguration()
+    .Enrich.FromLogContext()
+    .MinimumLevel.Is(isDev ? LogEventLevel.Debug : LogEventLevel.Information)
+    .MinimumLevel.Override("Microsoft", isDev ? LogEventLevel.Debug : LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", isDev ? LogEventLevel.Debug : LogEventLevel.Warning)
+    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+    .CreateLogger();
+
+
+// Replace default logging with Serilog
+builder.Host.UseSerilog();
+
 var jwtOptions = new JwtOptions
 {
     Issuer = builder.Configuration["JWT_ISSUER"] ?? "nuggets-api",
@@ -64,26 +84,26 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuer = true,
         ValidateAudience = true,
         ValidateIssuerSigningKey = true,
-        ValidateLifetime = true,
         ValidIssuer = jwtOptions.Issuer,
         ValidAudience = jwtOptions.Audience,
-        IssuerSigningKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(jwtOptions.Key))
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.Key)),
+        ClockSkew = TimeSpan.Zero
     };
 
-    // Add this to support reading JWT from cookies
     options.Events = new JwtBearerEvents
     {
         OnMessageReceived = context =>
         {
-            // look for "jwt" cookie
-            if (context.Request.Cookies.ContainsKey("jwt"))
+            if (context.Request.Cookies.TryGetValue("jwt", out var token))
             {
-                context.Token = context.Request.Cookies["jwt"];
+                context.Token = token;
             }
             return Task.CompletedTask;
-        }
+        },
     };
 });
+
+
 
 builder.Services.AddAuthorization(options =>
 {
@@ -148,8 +168,9 @@ using (var scope = app.Services.CreateScope())
     
     var userManager = services.GetRequiredService<UserManager<AppUser>>();
     var roleManager = services.GetRequiredService<RoleManager<AppRole>>();
+    var config = services.GetRequiredService<IConfiguration>();
 
-    await IdentitySeeder.SeedDatabaseAsync(userManager, roleManager, dbContext);
+    await IdentitySeeder.SeedDatabaseAsync(userManager, roleManager, dbContext, config);
     await UomSeeder.SeedUomsAsync(dbContext);
     await AccountSeeder.SeedChartOfAccountsAsync(dbContext);
 

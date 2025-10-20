@@ -22,4 +22,7 @@ public class AppUser : IdentityUser<Guid>
     public bool IsDeleted { get; set; } = false;
     
     public ICollection<UserCompany> UserCompanies { get; set; } = new List<UserCompany>();
+
+    public string? RefreshToken { get; set; }
+    public DateTime? RefreshTokenExpiry { get; set; }
 }

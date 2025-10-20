@@ -31,7 +31,8 @@ public static class SequenceSeeder
 
         foreach (var seq in sequences)
         {
-            await dbContext.Database.ExecuteSqlRawAsync($"CREATE SEQUENCE IF NOT EXISTS {seq.Key} START {seq.Value} INCREMENT 1;");
+            var sql = $"CREATE SEQUENCE IF NOT EXISTS \"{seq.Key}\" START {seq.Value} INCREMENT 1;";
+            await dbContext.Database.ExecuteSqlRawAsync(sql);
         }
     }
 }
