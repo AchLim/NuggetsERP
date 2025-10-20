@@ -14,9 +14,20 @@ COPY . .
 WORKDIR /src/Nuggets.API
 RUN dotnet publish "Nuggets.API.csproj" -c Release -o /app/publish
 
-# runtime image
+# ==========================
+# Runtime image
+# ==========================
 FROM mcr.microsoft.com/dotnet/aspnet:9.0
 WORKDIR /app
+
+# Install curl so the Docker healthcheck can run
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+# expose the API port
 EXPOSE 8080
+
+# copy published app
 COPY --from=build /app/publish .
+
+# run the API
 ENTRYPOINT ["dotnet", "Nuggets.API.dll"]
