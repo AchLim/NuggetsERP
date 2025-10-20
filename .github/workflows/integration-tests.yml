@@ -1,4 +1,4 @@
-name: Integration Tests (Docker Compose)
+name: Backend CI (Build & Test)
 
 on:
   push:
@@ -7,41 +7,29 @@ on:
     branches: [ "main" ]
 
 jobs:
-  integration-test:
+  build-test:
     runs-on: ubuntu-latest
 
     steps:
+      # 1️⃣ Checkout source
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build and start services
-        run: |
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d --build
+      # 2️⃣ Setup .NET
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
 
-      # -------------------------------------------------
-      # Diagnostic step (optional but helpful)
-      # -------------------------------------------------
-      - name: List containers and ports
-        run: |
-          docker ps -a --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
+      # 3️⃣ Restore dependencies
+      - name: Restore dependencies
+        run: dotnet restore Nuggets.API/Nuggets.API.csproj
 
-      # -------------------------------------------------
-      # Wait for the API via Nginx (now on 8443)
-      # -------------------------------------------------
-      - name: Wait for API to be ready
-        run: |
-          echo "Waiting for API readiness on https://localhost:8443/api ..."
-          for i in {1..30}; do
-            if curl -k -sSf https://localhost:8443/api > /dev/null; then
-              echo "✅ API is up!"
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "❌ API did not start in time"
-          exit 1
+      # 4️⃣ Build project
+      - name: Build
+        run: dotnet build Nuggets.API/Nuggets.API.csproj --configuration Release --no-restore
 
-      - name: Shutdown containers
-        if: always()
+      # 6️⃣ Build Docker image (for publish or GHCR)
+      - name: Build Docker image
         run: |
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
+          docker build -t ghcr.io/achlim/nuggets-api:latest -f Nuggets.API/Dockerfile .
