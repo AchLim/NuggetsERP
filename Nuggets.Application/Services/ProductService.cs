@@ -115,12 +115,20 @@ public sealed class ProductService(IProductRepository repo) : IProductService
 
     private static ProductListDto ToListDto(Product p) => 
         new ProductListDto(p.Id, p.Name, p.DefaultPurchasePrice, p.DefaultSalesPrice, p.ProductCategory?.Name, p.UomId, p.Uom.Name, p.Vendor?.Name,
-            p.StockMovements.Sum(sm => sm.MovementType == StockMovementType.Inbound ? sm.Quantity : -sm.Quantity));
+            p.StockMovements.Sum(sm =>
+                            sm.MovementType == StockMovementType.Inbound ? sm.Quantity :
+                            sm.MovementType == StockMovementType.Outbound ? -sm.Quantity :
+                            sm.Quantity
+            ));
 
     private static ProductReadDto ToReadDto(Product p) =>
         new ProductReadDto(p.Id, p.Name, p.Description, p.UomId, p.Uom.Name, p.DefaultPurchasePrice, p.DefaultSalesPrice,
             p.ProductCategoryId, p.ProductCategory?.Name, p.VendorId, p.Vendor?.Name,
-            p.StockMovements.Sum(sm => sm.MovementType == StockMovementType.Inbound ? sm.Quantity : -sm.Quantity),
+            p.StockMovements.Sum(sm =>
+                sm.MovementType == StockMovementType.Inbound ? sm.Quantity :
+                sm.MovementType == StockMovementType.Outbound ? -sm.Quantity :
+                sm.Quantity
+            ),
             p.StockMovements.Select(sm => new StockMovementReadDto(
                     sm.Id, sm.MovementDate, sm.MovementType.ToString(), sm.Quantity, sm.ReferenceType, sm.ReferenceId))
                 .ToList()

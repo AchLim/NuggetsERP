@@ -38,14 +38,14 @@ public class StockMovementRepository(NuggetsDbContext db)
 
     public async Task<decimal> GetNetQuantityAsync(Guid productId, CancellationToken ct = default)
     {
-        var inQty = await db.StockMovements
-            .Where(sm => sm.ProductId == productId && sm.MovementType == StockMovementType.Inbound)
-            .SumAsync(sm => (decimal?)sm.Quantity, ct) ?? 0;
+        var total = await db.StockMovements
+            .Where(sm => sm.ProductId == productId)
+            .SumAsync(sm =>
+                sm.MovementType == StockMovementType.Outbound ? -sm.Quantity :
+                sm.MovementType == StockMovementType.Adjustment ? sm.Quantity :
+                sm.MovementType == StockMovementType.Inbound ? sm.Quantity :
+                0, ct);
 
-        var outQty = await db.StockMovements
-            .Where(sm => sm.ProductId == productId && sm.MovementType == StockMovementType.Outbound)
-            .SumAsync(sm => (decimal?)sm.Quantity, ct) ?? 0;
-
-        return inQty - outQty;
+        return total;
     }
 }

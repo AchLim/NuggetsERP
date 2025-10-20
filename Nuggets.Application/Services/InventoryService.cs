@@ -683,15 +683,38 @@ public sealed class InventoryService(
         var oldQty = await movementRepo.GetNetQuantityAsync(product.Id, ct);
         var oldValue = oldQty * product.CurrentMovingAverageCost;
 
-        var newQty = Math.Abs(quantity);
+        // determine movement direction
+        var isIncrease = quantity > 0;
+
+        decimal effectiveUnitCost;
+        if (isIncrease)
+        {
+            // first time stock-in (oldQty == 0) → must use provided cost
+            if (oldQty == 0)
+            {
+                if (unitCost == null)
+                    return Result<bool>.Err("Unit cost is required for first inbound adjustment", "INVALID_COST");
+
+                effectiveUnitCost = unitCost.Value;
+            }
+            else
+            {
+                effectiveUnitCost = unitCost ?? product.CurrentMovingAverageCost;
+            }
+        }
+        else
+        {
+            // decrease or outbound → always use current average
+            effectiveUnitCost = product.CurrentMovingAverageCost;
+        }
+
         var movementType = quantity >= 0 ? StockMovementType.Inbound : StockMovementType.Outbound;
-        var effectiveUnitCost = unitCost ?? product.CurrentMovingAverageCost;
 
         var adjustmentMovement = new StockMovement
         {
             ProductId = productId,
             MovementType = StockMovementType.Adjustment,
-            Quantity = newQty,
+            Quantity = quantity,
             UnitCost = effectiveUnitCost,
             MovementDate = DateTime.UtcNow,
             ReferenceType = "InventoryAdjustment",
@@ -700,10 +723,10 @@ public sealed class InventoryService(
         await movementRepo.AddAsync(adjustmentMovement, ct);
 
         // Recalculate moving average cost only for positive adjustments
-        if (quantity > 0 && product.CostMethod == CostMethod.MovingAverage)
+        if (isIncrease && product.CostMethod == CostMethod.MovingAverage)
         {
-            var newValue = newQty * effectiveUnitCost;
-            var newTotalQty = oldQty + newQty;
+            var newValue = quantity * effectiveUnitCost;
+            var newTotalQty = oldQty + quantity;
             var newTotalValue = oldValue + newValue;
 
             product.CurrentMovingAverageCost = newTotalQty > 0
@@ -716,9 +739,9 @@ public sealed class InventoryService(
         var invAcc = await coaRepo.GetInventoryAccountAsync(ct);
         var adjAcc = await coaRepo.GetInventoryAdjustmentAccountAsync(ct);
 
-        var totalValue = newQty * effectiveUnitCost;
+        var totalValue = quantity * effectiveUnitCost;
 
-        if (quantity > 0)
+        if (isIncrease)
         {
             // Dr Inventory, Cr Adjustment Gain
             await journalService.PostAsync(
