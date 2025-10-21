@@ -130,10 +130,10 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowFrontend",
         policy =>
         {
-            policy.WithOrigins("http://localhost:5173") // your React dev server
+            policy.WithOrigins("http://localhost:5173", "https://nuggetsvape.com", "https://www.nuggetsvape.com")
                   .AllowAnyHeader()
                   .AllowAnyMethod()
-                  .AllowCredentials(); // needed because you set cookies
+                  .AllowCredentials();
         });
 });
 
